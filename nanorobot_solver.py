@@ -62,6 +62,8 @@ class NanorobotSolver:
         """
         Loads experimental data from either a .csv or .xlsx file.
         """
+        if path is None:
+            return None
         try:
             if path.lower().endswith('.csv'):
                 data = pd.read_csv(path)
