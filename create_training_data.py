@@ -5,21 +5,7 @@ import multiprocessing
 from scipy.interpolate import interp1d
 from tqdm import tqdm
 import time
-
-# 导入您自己的 nanorobot_solver
 from nanorobot_solver import NanorobotSolver
-
-# --- 全局配置变量 ---
-# (这些将在子进程中被读取)
-CONFIG = None
-FIXED_PARAMS = {}
-TRAINABLE_PARAMS_NAMES = []
-PARAM_RANGES = {}
-LIGHT_SCHEDULE = []
-INITIAL_P = None
-SIM_TOTAL_TIME = 0.0
-STANDARDIZED_TIME_AXIS = None
-P_UNBIND_TRACK = 0.0
 
 
 def load_config():
@@ -33,7 +19,7 @@ def load_config():
     CONFIG = configparser.ConfigParser()
     CONFIG.read("configfile.ini", encoding="utf-8")
 
-    # 1. 加载物理参数 (借鉴自 main.py)
+    # 1. 加载物理参数 
     all_physical_params = CONFIG['PHYSICAL_PARAMETERS']
     for name, value in all_physical_params.items():
         if value.strip() == "":
@@ -43,7 +29,7 @@ def load_config():
 
     P_UNBIND_TRACK = float(CONFIG['PHYSICAL_PARAMETERS'].get('p_unbind_track', 0.09507))
 
-    # 2. 加载参数范围 (借鉴自 main.py)
+    # 2. 加载参数范围 
     if CONFIG.has_section('TRAINING_PARAMETER_RANGES'):
         default_min, default_max = [float(x.strip()) for x in
                                     CONFIG['TRAINING_PARAMETER_RANGES']['default_range'].split(',')]
@@ -55,14 +41,14 @@ def load_config():
             else:
                 PARAM_RANGES[name] = (default_min, default_max)
 
-    # 3. 加载模拟设置 (借鉴自 main.py)
+    # 3. 加载模拟设置 
     SIM_TOTAL_TIME = float(CONFIG["NANOROBOT_MODELING"]["sim_total_time"])
     INITIAL_CONFIG_IDX = int(CONFIG["NANOROBOT_MODELING"]["initial_configuration_idx"])
     CYCLE_DURATION_VIS = float(CONFIG["NANOROBOT_MODELING"]["cycle_duration_vis"])
     CYCLE_DURATION_UV = float(CONFIG["NANOROBOT_MODELING"]["cycle_duration_uv"])
     LIGHT_START_MODE = int(CONFIG["NANOROBOT_MODELING"]["light_start_mode"])
 
-    # 4. 创建光照计划 (借鉴自 main.py)
+    # 4. 创建光照计划 
     current_time = 0
     phases = [('visible', CYCLE_DURATION_VIS), ('uv', CYCLE_DURATION_UV)] if LIGHT_START_MODE == 0 else \
         [('uv', CYCLE_DURATION_UV), ('visible', CYCLE_DURATION_VIS)]
@@ -75,8 +61,8 @@ def load_config():
                     LIGHT_SCHEDULE.append((end_time, light_type))
                     current_time = end_time
 
-    # 5. 创建初始概率分布 (借鉴自 main.py)
-    num_configs = 14  # 从 nanorobot_solver.py 中我们知道是14
+    # 5. 创建初始概率分布 
+    num_configs = 14  # 14种状态
     INITIAL_P = np.zeros(num_configs)
     INITIAL_P[INITIAL_CONFIG_IDX] = 1.0
 
@@ -109,7 +95,7 @@ def generate_sample(sample_index):
         # 2. 初始化模拟器 (每个子进程必须创建自己的实例)
         solver = NanorobotSolver(
             initial_parameters=all_params,
-            experimental_data_path_a=None  # 我们不需要加载实验数据
+            experimental_data_path_a=None
         )
 
         # 3. 运行模拟
@@ -120,7 +106,6 @@ def generate_sample(sample_index):
             return None
 
         # 4. 计算荧光曲线 (X)
-        # (这部分逻辑借鉴自 nanorobot_solver.py 的 evaluate_model)
         sim_time = sim_df['Time'].values
         sim_fam = (sim_df['P_0'] + sim_df['P_1'] + sim_df['P_3'] +
                    sim_df['P_4'] + sim_df['P_6'] + sim_df['P_8'] +
@@ -132,7 +117,6 @@ def generate_sample(sample_index):
                    sim_df['P_5']).values + P_UNBIND_TRACK
 
         # 5. 插值到标准时间轴
-        # (这部分逻辑借鉴自 nanorobot_solver.py 的 evaluate_model)
         interp_fam_func = interp1d(sim_time, sim_fam, kind='linear', fill_value='extrapolate')
         interp_tye_func = interp1d(sim_time, sim_tye, kind='linear', fill_value='extrapolate')
         interp_cy5_func = interp1d(sim_time, sim_cy5, kind='linear', fill_value='extrapolate')
@@ -146,7 +130,6 @@ def generate_sample(sample_index):
 
         # 按 `TRAINABLE_PARAMS_NAMES` 的顺序返回参数值
         params_Y = [trained_params[name] for name in TRAINABLE_PARAMS_NAMES]
-
         return (params_Y, curve_X)
 
     except Exception as e:
@@ -200,7 +183,7 @@ if __name__ == "__main__":
             OUTPUT_FILENAME,
             X=X_data,  # 荧光曲线 (输入)
             Y=Y_data,  # 物理参数 (标签)
-            parameter_names=np.array(TRAINABLE_PARAMS_NAMES)  # 存储参数名称以供参考
+            parameter_names=np.array(TRAINABLE_PARAMS_NAMES)
         )
 
         print(f"--- 数据集已保存到 {OUTPUT_FILENAME} ---")
