@@ -835,3 +835,5 @@ function [time_out, fam_out, tye_out, cy5_out] = run_dna_motor_simulation(sim_pa
     end
 
 end % 结束 run_dna_motor_simulation 函数
+disp('=== 模拟完成，MATLAB 即将退出 ===');
+exit;  
