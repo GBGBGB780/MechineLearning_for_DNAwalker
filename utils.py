@@ -11,13 +11,20 @@ def load_and_preprocess_data(npz_filename, batch_size=64):
     加载、预处理、拆分数据，并创建PyTorch DataLoaders。
     """
     print(f"--- 1. 加载和预处理数据 ---")
-
+    param_names = [
+        'E_b',
+        'E_b_azo_trans',
+        'E_b_azo_cis',
+        'k_mig',
+        'k0',
+        'drt_z',
+        'drt_s'
+    ]
     # --- 加载数据 ---
     try:
         dataset = np.load(npz_filename)
         X_data = dataset['X']
         Y_data = dataset['Y']
-        param_names = dataset['parameter_names']
         print(f"成功加载 {npz_filename}。")
         print(f"原始 X 形状: {X_data.shape}, 原始 Y 形状: {Y_data.shape}")
     except Exception as e:

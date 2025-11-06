@@ -9,7 +9,15 @@ from model import InverseMLP
 
 def predict_from_new_data():
     print(f"--- 1. 加载训练好的模型和 Scalers ---")
-
+    param_names = [
+        'E_b',
+        'E_b_azo_trans',
+        'E_b_azo_cis',
+        'k_mig',
+        'k0',
+        'drt_z',
+        'drt_s'
+    ]
     # --- 加载 Scalers ---
     try:
         with open('x_scaler.pkl', 'rb') as f:
@@ -56,10 +64,9 @@ def predict_from_new_data():
         # (为了简单起见，我们直接加载整个 X 并选择一个样本)
         X_data_raw = dataset['X']
         Y_data_raw = dataset['Y']
-        param_names = dataset['parameter_names']
 
         # 选取一个样本 (例如，第 1000 个)
-        X_sample_raw = X_data_raw[1000]  # 形状 (3, 100)
+        X_sample_raw = X_data_raw[1000]  # 形状 (100, 3)
         Y_sample_real = Y_data_raw[1000]  # 形状 (7,)
 
     except Exception as e:
