@@ -146,7 +146,7 @@ parfor i = 1:num_samples
     % 将结果放入 cell 中（每个 cell 是一个 num_time_points x 3 矩阵）
     X_local{i} = [fam_interp; tye_interp; cy5_interp]';
     
-    if mod(i, 500) == 0
+    if mod(i, 1) == 0
         fprintf('已完成模拟 %d / %d\n', i, num_samples);
     end
 end
