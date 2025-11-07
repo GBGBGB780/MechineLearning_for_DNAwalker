@@ -22,7 +22,7 @@ def predict_from_new_data():
         return
 
     # --- 加载模型 ---
-    INPUT_SIZE = 300
+    INPUT_SIZE = 36003
     OUTPUT_SIZE = 7
     MODEL_SAVE_PATH = 'best_mlp_model.pth'
 
@@ -50,20 +50,28 @@ def predict_from_new_data():
     # *****************************************************************
 
     # --- 为了本示例，我们从 'training_dataset.npz' 中加载测试集数据 ---
+    param_names = [
+        'E_b',
+        'E_b_azo_trans',
+        'E_b_azo_cis',
+        'k_mig',
+        'k0',
+        'drt_z',
+        'drt_s'
+    ]
     try:
         dataset = np.load('training_dataset.npz')
         # (我们必须复现 train_mlp.py 中的数据拆分逻辑来找到测试集)
         # (为了简单起见，我们直接加载整个 X 并选择一个样本)
         X_data_raw = dataset['X']
         Y_data_raw = dataset['Y']
-        param_names = dataset['parameter_names']
 
         # 选取一个样本 (例如，第 1000 个)
-        X_sample_raw = X_data_raw[1000]  # 形状 (3, 100)
-        Y_sample_real = Y_data_raw[1000]  # 形状 (7,)
+        X_sample_raw = X_data_raw[7]  # 形状 (3, 100)
+        Y_sample_real = Y_data_raw[7]  # 形状 (7,)
 
     except Exception as e:
-        print(f"错误: 无法加载 {dataset['__file__']}。{e}")
+        print(f"错误: 无法加载。{e}")
         return
 
     print(f"\n--- 2. 准备预测样本 (样本 #1000) ---")
