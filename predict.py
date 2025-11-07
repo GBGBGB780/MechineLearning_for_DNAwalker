@@ -17,7 +17,7 @@ except ImportError:
 
 # --- 1. 定义常量 ---
 # (这些必须与您的训练脚本 严格匹配)
-INPUT_SIZE = 300  # 3 条曲线 * 100 个时间点
+INPUT_SIZE = 36003  # 3 条曲线 * 100 个时间点
 OUTPUT_SIZE = 7  # 7 个物理参数
 
 MODEL_FILE = 'best_mlp_model.pth'
@@ -25,7 +25,6 @@ X_SCALER_FILE = 'x_scaler.pkl'
 Y_SCALER_FILE = 'y_scaler.pkl'
 CONFIG_FILE = 'configfile.ini'
 DATA_FILE = 'Fig3a_fitting.xlsx'
-NPZ_FILE = 'training_dataset.npz'  # 用于加载参数名称
 
 
 def load_real_experimental_data(config, data_path):
@@ -86,7 +85,7 @@ def load_real_experimental_data(config, data_path):
 
     # --- f. 组合并返回 ---
     # 将三条曲线堆叠成 (3, 100) 的矩阵
-    X_sample_raw = np.stack([curve_fam, curve_tye, curve_cy5], axis=0)
+    X_sample_raw = np.stack([curve_fam, curve_tye, curve_cy5], axis=1)
 
     print("真实实验数据已成功加载并转换为 (3, 100) 格式。")
     return X_sample_raw
@@ -111,7 +110,10 @@ def predict_parameters():
             y_scaler = pickle.load(f)
 
         # c. 加载参数名称
-        param_names = np.load(NPZ_FILE)['parameter_names']
+        param_names = [
+            'E_b', 'E_b_azo_trans', 'E_b_azo_cis',
+            'k_mig', 'k0', 'drt_z', 'drt_s'
+        ]
 
         # d. 加载模型
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -124,7 +126,7 @@ def predict_parameters():
 
     except Exception as e:
         print(f"*** 致命错误: 无法加载必要的工具文件 ***")
-        print(f"请确保 {MODEL_FILE}, {X_SCALER_FILE}, {Y_SCALER_FILE}, {CONFIG_FILE}, {NPZ_FILE} 都在此文件夹中。")
+        print(f"请确保 {MODEL_FILE}, {X_SCALER_FILE}, {Y_SCALER_FILE}, {CONFIG_FILE} 都在此文件夹中。")
         print(f"错误信息: {e}")
         return
 
@@ -137,7 +139,7 @@ def predict_parameters():
 
     # --- 3. 预处理 (与训练时 完全一致) ---
     print("\n--- 2. 正在准备模型输入 ---")
-    # a. 扁平化: (3, 100) -> (1, 300)
+    # a. 扁平化: (100, 3) -> (1, 300)
     X_sample_flat = X_sample_raw.reshape(1, -1)
 
     # b. 归一化 (使用 x_scaler)
