@@ -1,104 +1,175 @@
+# coding=gb2312
 import torch
 import numpy as np
+import pandas as pd
 import pickle
 import sys
+import configparser
+from scipy.interpolate import interp1d
 
-# ä»æˆ‘ä»¬çš„æœ¬åœ°æ–‡ä»¶ä¸­å¯¼å…¥
-from model import InverseMLP
+# ´ÓÎÒÃÇµÄ±¾µØÎÄ¼şÖĞµ¼Èë
+try:
+    from model import InverseMLP
+except ImportError:
+    print("´íÎó: ÕÒ²»µ½ 'model.py' ÎÄ¼ş¡£")
+    print("ÇëÈ·±£ InverseMLP ÀàµÄ¶¨Òå Óë´Ë½Å±¾Î»ÓÚÍ¬Ò»ÎÄ¼ş¼ĞÖĞ¡£")
+    sys.exit(1)
+
+# --- 1. ¶¨Òå³£Á¿ ---
+# (ÕâĞ©±ØĞëÓëÄúµÄÑµÁ·½Å±¾ ÑÏ¸ñÆ¥Åä)
+INPUT_SIZE = 300  # 3 ÌõÇúÏß * 100 ¸öÊ±¼äµã
+OUTPUT_SIZE = 7  # 7 ¸öÎïÀí²ÎÊı
+
+MODEL_FILE = 'best_mlp_model.pth'
+X_SCALER_FILE = 'x_scaler.pkl'
+Y_SCALER_FILE = 'y_scaler.pkl'
+CONFIG_FILE = 'configfile.ini'
+DATA_FILE = 'Fig3a_fitting.xlsx'
+NPZ_FILE = 'training_dataset.npz'  # ÓÃÓÚ¼ÓÔØ²ÎÊıÃû³Æ
 
 
-def predict_from_new_data():
-    print(f"--- 1. åŠ è½½è®­ç»ƒå¥½çš„æ¨¡å‹å’Œ Scalers ---")
-    param_names = [
-        'E_b',
-        'E_b_azo_trans',
-        'E_b_azo_cis',
-        'k_mig',
-        'k0',
-        'drt_z',
-        'drt_s'
-    ]
-    # --- åŠ è½½ Scalers ---
+def load_real_experimental_data(config, data_path):
+    """
+    ¼ÓÔØ¡¢ÇåÀí²¢²åÖµÕæÊµµÄÊµÑéÊı¾İ£¬Ê¹ÆäÓëÑµÁ·Êı¾İ¸ñÊ½ÍêÈ«Ò»ÖÂ¡£
+    """
+    print(f"--- 1. ÕıÔÚ¼ÓÔØ²¢Ô¤´¦ÀíÕæÊµÊµÑéÊı¾İ: {data_path} ---")
+
+    # --- a. ´Ó config ÖĞ»ñÈ¡Ä£ÄâÉèÖÃ ---
     try:
-        with open('x_scaler.pkl', 'rb') as f:
+        sim_total_time = float(config["NANOROBOT_MODELING"]["sim_total_time"])
+        num_time_points = int(config['DATA_GENERATION']['num_time_points'])
+        p_unbind_track = float(config['PHYSICAL_PARAMETERS']['p_unbind_track'])
+    except KeyError as e:
+        print(f"´íÎó: ÎŞ·¨´Ó {CONFIG_FILE} ÖĞ¶ÁÈ¡¹Ø¼üÉèÖÃ: {e}")
+        return None
+
+    # --- b. ´´½¨±ê×¼Ê±¼äÖá (±ØĞëÓëÑµÁ·Ê± Ò»ÖÂ) ---
+    standard_time_axis = np.linspace(0, sim_total_time, num_time_points)
+
+    # --- c. ¼ÓÔØÕæÊµµÄCSVÊı¾İ ---
+    try:
+        data = pd.read_excel(data_path)
+        exp_time = data['Time'].values
+        exp_fam = data['FAM/FAM T (+)'].values
+        exp_tye = data['TYE/TYE T (-)'].values
+        exp_cy5 = data['CY5/CY5 T (m)'].values
+    except Exception as e:
+        print(f"´íÎó: ÎŞ·¨´Ó {data_path} ¶ÁÈ¡Êı¾İÁĞ¡£")
+        print(f"ÇëÈ·±£ÎÄ¼ş´æÔÚÇÒ°üº¬ 'Time', 'FAM/FAM T (+)', 'TYE/TYE T (-)', 'CY5/CY5 T (m)' ÁĞ¡£")
+        print(f"´íÎóĞÅÏ¢: {e}")
+        return None
+
+    # --- d. ÇåÀí²¢µ÷ÕûÊı¾İ ---
+    # (Õâ²¿·ÖÂß¼­Ò²½è¼ø×Ô nanorobot_solver.py)
+    mask = ~np.isnan(exp_time) & ~np.isnan(exp_fam) & ~np.isnan(exp_tye) & ~np.isnan(exp_cy5)
+    exp_time, exp_fam, exp_tye, exp_cy5 = exp_time[mask], exp_fam[mask], exp_tye[mask], exp_cy5[mask]
+
+    # !!! ¹Ø¼ü²½Öè !!!
+    # ÎÒÃÇµÄÑµÁ·Êı¾İ ÔÚ¼ÆËã sim_cy5 Ê±¼ÓÉÏÁË p_unbind_track
+    # ÎªÁËÊ¹ÕæÊµÊı¾İÆ¥Åä£¬ÎÒÃÇ±ØĞë´ÓÕæÊµÊı¾İÖĞ *¼õÈ¥* Õâ¸ö»ùÏßÖµ
+    exp_cy5_adjusted = exp_cy5 - p_unbind_track
+
+    # --- e. ²åÖµ (Interpolate) ---
+    # (Õâ²¿·ÖÂß¼­½è¼ø×Ô generate_dataset.py ºÍ nanorobot_solver.py)
+    try:
+        interp_fam_func = interp1d(exp_time, exp_fam, kind='linear', fill_value='extrapolate')
+        interp_tye_func = interp1d(exp_time, exp_tye, kind='linear', fill_value='extrapolate')
+        interp_cy5_func = interp1d(exp_time, exp_cy5_adjusted, kind='linear', fill_value='extrapolate')
+
+        curve_fam = interp_fam_func(standard_time_axis)
+        curve_tye = interp_tye_func(standard_time_axis)
+        curve_cy5 = interp_cy5_func(standard_time_axis)
+    except ValueError as e:
+        print(f"´íÎó: ÎŞ·¨²åÖµÊı¾İ¡£Õâ¿ÉÄÜÊÇÒòÎª {data_path} ÖĞµÄÊ±¼äµã²»×ã¡£")
+        print(f"´íÎóĞÅÏ¢: {e}")
+        return None
+
+    # --- f. ×éºÏ²¢·µ»Ø ---
+    # ½«ÈıÌõÇúÏß¶Ñµş³É (3, 100) µÄ¾ØÕó
+    X_sample_raw = np.stack([curve_fam, curve_tye, curve_cy5], axis=0)
+
+    print("ÕæÊµÊµÑéÊı¾İÒÑ³É¹¦¼ÓÔØ²¢×ª»»Îª (3, 100) ¸ñÊ½¡£")
+    return X_sample_raw
+
+
+def predict_parameters():
+    """
+    ¼ÓÔØÄ£ĞÍºÍÊı¾İ£¬Ö´ĞĞ²¢´òÓ¡×îÖÕµÄ²ÎÊıÔ¤²â¡£
+    """
+
+    # --- 1. ¼ÓÔØËùÓĞ±ØÒªµÄ¹¤¾ß ---
+    print(f"--- ÕıÔÚ¼ÓÔØ¹¤¾ß ---")
+    try:
+        # a. ¼ÓÔØ Config
+        config = configparser.ConfigParser()
+        config.read(CONFIG_FILE)
+
+        # b. ¼ÓÔØ Scalers
+        with open(X_SCALER_FILE, 'rb') as f:
             x_scaler = pickle.load(f)
-        with open('y_scaler.pkl', 'rb') as f:
+        with open(Y_SCALER_FILE, 'rb') as f:
             y_scaler = pickle.load(f)
-    except FileNotFoundError:
-        print("é”™è¯¯: æ‰¾ä¸åˆ° 'x_scaler.pkl' æˆ– 'y_scaler.pkl'ã€‚")
-        print("è¯·å…ˆæˆåŠŸè¿è¡Œ train_mlp.py æ¥ç”Ÿæˆè¿™äº›æ–‡ä»¶ã€‚")
-        return
 
-    # --- åŠ è½½æ¨¡å‹ ---
-    INPUT_SIZE = 300
-    OUTPUT_SIZE = 7
-    MODEL_SAVE_PATH = 'best_mlp_model.pth'
+        # c. ¼ÓÔØ²ÎÊıÃû³Æ
+        param_names = np.load(NPZ_FILE)['parameter_names']
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = InverseMLP(INPUT_SIZE, OUTPUT_SIZE).to(device)
+        # d. ¼ÓÔØÄ£ĞÍ
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = InverseMLP(INPUT_SIZE, OUTPUT_SIZE).to(device)
+        model.load_state_dict(torch.load(MODEL_FILE))
+        model.eval()  # ** ±ØĞë ** ÉèÎªÆÀ¹ÀÄ£Ê½
 
-    try:
-        model.load_state_dict(torch.load(MODEL_SAVE_PATH))
-        model.eval()  # è®¾ä¸ºè¯„ä¼°æ¨¡å¼
-    except FileNotFoundError:
-        print(f"é”™è¯¯: æ‰¾ä¸åˆ°æ¨¡å‹æ–‡ä»¶ '{MODEL_SAVE_PATH}'ã€‚")
-        print("è¯·å…ˆæˆåŠŸè¿è¡Œ train_mlp.pyã€‚")
-        return
-
-    print(f"æˆåŠŸåŠ è½½æ¨¡å‹å’Œ Scalersã€‚")
-
-    # --- 2. åŠ è½½ç”¨äºé¢„æµ‹çš„æ•°æ® ---
-    # *****************************************************************
-    # * åœ¨çœŸå®åœºæ™¯ä¸­:
-    # * æ‚¨ä¼šåœ¨è¿™é‡ŒåŠ è½½æ‚¨çš„ 'Fig3a_fitting.xlsx' æ–‡ä»¶ã€‚
-    # * ç„¶åï¼Œæ‚¨éœ€è¦ç”¨å’Œ generate_dataset.py ä¸­å®Œå…¨ç›¸åŒçš„æ–¹æ³•ï¼š
-    # * 1. æå– 3 æ¡æ›²çº¿ã€‚
-    # * 2. å°†å®ƒä»¬æ’å€¼ (interpolate) åˆ° 100 ä¸ªæ ‡å‡†æ—¶é—´ç‚¹ã€‚
-    # * 3. å½¢çŠ¶å˜ä¸º (3, 100)
-    # *****************************************************************
-
-    # --- ä¸ºäº†æœ¬ç¤ºä¾‹ï¼Œæˆ‘ä»¬ä» 'training_dataset.npz' ä¸­åŠ è½½æµ‹è¯•é›†æ•°æ® ---
-    try:
-        dataset = np.load('training_dataset.npz')
-        # (æˆ‘ä»¬å¿…é¡»å¤ç° train_mlp.py ä¸­çš„æ•°æ®æ‹†åˆ†é€»è¾‘æ¥æ‰¾åˆ°æµ‹è¯•é›†)
-        # (ä¸ºäº†ç®€å•èµ·è§ï¼Œæˆ‘ä»¬ç›´æ¥åŠ è½½æ•´ä¸ª X å¹¶é€‰æ‹©ä¸€ä¸ªæ ·æœ¬)
-        X_data_raw = dataset['X']
-        Y_data_raw = dataset['Y']
-
-        # é€‰å–ä¸€ä¸ªæ ·æœ¬ (ä¾‹å¦‚ï¼Œç¬¬ 1000 ä¸ª)
-        X_sample_raw = X_data_raw[1000]  # å½¢çŠ¶ (100, 3)
-        Y_sample_real = Y_data_raw[1000]  # å½¢çŠ¶ (7,)
+        print(f"³É¹¦¼ÓÔØ: Config, Scalers, Model, ParamNames")
+        print(f"Ô¤²âÉè±¸: {device}")
 
     except Exception as e:
-        print(f"é”™è¯¯: æ— æ³•åŠ è½½ {dataset['__file__']}ã€‚{e}")
+        print(f"*** ÖÂÃü´íÎó: ÎŞ·¨¼ÓÔØ±ØÒªµÄ¹¤¾ßÎÄ¼ş ***")
+        print(f"ÇëÈ·±£ {MODEL_FILE}, {X_SCALER_FILE}, {Y_SCALER_FILE}, {CONFIG_FILE}, {NPZ_FILE} ¶¼ÔÚ´ËÎÄ¼ş¼ĞÖĞ¡£")
+        print(f"´íÎóĞÅÏ¢: {e}")
         return
 
-    print(f"\n--- 2. å‡†å¤‡é¢„æµ‹æ ·æœ¬ (æ ·æœ¬ #1000) ---")
+    # --- 2. ¼ÓÔØ²¢´¦ÀíÕæÊµµÄÊäÈëÊı¾İ ---
+    X_sample_raw = load_real_experimental_data(config, DATA_FILE)
 
-    # --- 3. é¢„å¤„ç†æ ·æœ¬ (å¿…é¡»ä½¿ç”¨å’Œè®­ç»ƒæ—¶å®Œå…¨ç›¸åŒçš„ Scaler!) ---
-    X_sample_flat = X_sample_raw.reshape(1, -1)  # (1, 300)
-    X_sample_scaled = x_scaler.transform(X_sample_flat)  # å½’ä¸€åŒ–
+    if X_sample_raw is None:
+        print("ÎŞ·¨´¦ÀíÊäÈëÊı¾İ£¬Ô¤²âÖĞÖ¹¡£")
+        return
+
+    # --- 3. Ô¤´¦Àí (ÓëÑµÁ·Ê± ÍêÈ«Ò»ÖÂ) ---
+    print("\n--- 2. ÕıÔÚ×¼±¸Ä£ĞÍÊäÈë ---")
+    # a. ±âÆ½»¯: (3, 100) -> (1, 300)
+    X_sample_flat = X_sample_raw.reshape(1, -1)
+
+    # b. ¹éÒ»»¯ (Ê¹ÓÃ x_scaler)
+    X_sample_scaled = x_scaler.transform(X_sample_flat)
+
+    # c. ×ª»»Îª Tensor
     X_sample_tensor = torch.tensor(X_sample_scaled, dtype=torch.float32).to(device)
+    print("ÊäÈëÏòÁ¿ (1, 300) ÒÑ×¼±¸¾ÍĞ÷¡£")
 
-    # --- 4. è¿›è¡Œé¢„æµ‹ ---
-    print("... æ­£åœ¨é¢„æµ‹ ...")
-    with torch.no_grad():
+    # --- 4. Ö´ĞĞÔ¤²â ---
+    print("\n--- 3. ÕıÔÚÖ´ĞĞÄ£ĞÍÔ¤²â ---")
+    with torch.no_grad():  # Ô¤²âÊ±²»ĞèÒª¼ÆËãÌİ¶È
         predicted_scaled_params = model(X_sample_tensor)  # (1, 7)
 
-    # --- 5. é€†å‘è½¬æ¢ (æœ€é‡è¦!) ---
-    # å°†æ¨¡å‹è¾“å‡ºçš„ [0, 1] èŒƒå›´çš„å€¼ï¼Œâ€œè§£å‹ç¼©â€å›çœŸå®çš„ç‰©ç†å•ä½
-    predicted_real_params = y_scaler.inverse_transform(predicted_scaled_params.cpu().numpy())
+    # --- 5. ÄæÏò×ª»» (×î¹Ø¼üµÄÒ»²½) ---
+    # ½«Ä£ĞÍÊä³öµÄ [0, 1] ·¶Î§µÄÖµ£¬¡°½âÑ¹Ëõ¡±»ØÕæÊµµÄÎïÀíµ¥Î»
+    predicted_real_params = y_scaler.inverse_transform(
+        predicted_scaled_params.cpu().numpy()
+    )
 
-    print("\n--- 3. é¢„æµ‹ç»“æœå¯¹æ¯” ---")
-    print(f"{'å‚æ•°':<15} | {'çœŸå®å€¼ (Y)':<15} | {'é¢„æµ‹å€¼ (Y_pred)':<15}")
-    print("-" * 49)
+    # --- 6. ´òÓ¡×îÖÕ½á¹û ---
+    print("\n--- 4. Ô¤²âµÄÎïÀí²ÎÊı ---")
+    print("=" * 30)
 
     for i in range(len(param_names)):
         name = param_names[i]
-        real_val = Y_sample_real[i]
         pred_val = predicted_real_params[0, i]
-        print(f"{name:<15} | {real_val:<15.6f} | {pred_val:<15.6f}")
+        print(f"{name:<15}: {pred_val:<15.6f}")
+
+    print("=" * 30)
+    print("Ô¤²âÍê³É¡£")
 
 
 if __name__ == "__main__":
-    predict_from_new_data()
+    predict_parameters()

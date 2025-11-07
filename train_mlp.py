@@ -12,7 +12,7 @@ INPUT_SIZE = 300  # 3 条曲线 * 100 个时间点
 OUTPUT_SIZE = 7  # 7 个物理参数
 LEARNING_RATE = 0.001
 BATCH_SIZE = 64
-NUM_EPOCHS = 100  # 您可以先从50-100开始，看损失曲线
+NUM_EPOCHS = 4000  # 您可以先从50-100开始，看损失曲线
 DATASET_FILE = 'training_dataset.npz'
 MODEL_SAVE_PATH = 'best_mlp_model.pth'
 
