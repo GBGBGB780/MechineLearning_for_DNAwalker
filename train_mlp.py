@@ -8,7 +8,7 @@ from utils import load_and_preprocess_data
 from model import InverseMLP
 
 # --- 1. 设置超参数 ---
-INPUT_SIZE = 300  # 3 条曲线 * 100 个时间点
+INPUT_SIZE = 36003  # 3 条曲线 * 100 个时间点
 OUTPUT_SIZE = 7  # 7 个物理参数
 LEARNING_RATE = 0.001
 BATCH_SIZE = 64
