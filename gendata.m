@@ -653,16 +653,17 @@ function [time_out, fam_out, tye_out, cy5_out] = run_dna_motor_simulation(sim_pa
         dt = 1e-5; % 一个安全的备用值
     end
 
+    % --- [防护代码开始] ---
     % 设定一个最小 dt (例如 1.2e-6)，
     % 对应最大循环步数 (200*60)/1.2e-6 = 1e10
-    MIN_DT = 1.2e-6;
+    MIN_DT = 1.2e-6; %此处如果运行速度较慢可以将阈值降低比如1.2e-3
 
     if dt < MIN_DT
         dt = MIN_DT;
     end
 
     if isnan(dt) || isinf(dt) || dt == 0
-        dt = 1e-5; % 备用安全值
+        dt = 1e-5; % 备用安全值，如果上面修改了这里也需要进行修改比如1e-2
     end
     % --- [防护代码结束] ---
     
