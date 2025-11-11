@@ -31,7 +31,7 @@ print(f"Y(参数) shape: {Y.shape}")
 # --- 假设 X 的 shape 是 [samples, time, curves] ---
 # 例如 [8, 100, 3]
 
-sample_idx = 7
+sample_idx = 520
 # 确保 sample_idx 在范围内
 if sample_idx >= X.shape[0]:
     print(f"警告: 样本索引 {sample_idx} 超出范围, 重置为 0")
@@ -73,7 +73,16 @@ for curve_idx in range(num_curves):
     # 访问: sample_X[时间切片, 曲线索引]
     last_10_points = sample_X[-10:, curve_idx]
     print(f"  {label:<15}: {last_10_points}")
+# 1. 检查 NaN
+nan_samples_mask = np.isnan(X).any(axis=(1, 2))
+nan_count_x = np.sum(nan_samples_mask)
 
+# 2. 检查 Inf
+inf_samples_mask = np.isinf(X).any(axis=(1, 2))
+inf_count_x = np.sum(inf_samples_mask)
+print(f"X (曲线数据):")
+print(f"  包含 NaN (非数字) 个数: {nan_count_x}")
+print(f"  包含 Inf (无穷大) 个数: {inf_count_x}")
 # ===================================================================
 # 2. (新增) 显示 (Y) 样本数据
 # ===================================================================
@@ -92,3 +101,8 @@ for param_idx in range(num_params):
     value = sample_Y[param_idx]
 
     print(f"  {label:<15}: {value:.6e}")  # 使用科学计数法以更好地显示 k0
+nan_count_y = np.isnan(Y).sum()
+inf_count_y = np.isinf(Y).sum()
+print(f"Y (参数数据):")
+print(f"  包含 NaN (非数字) 个数: {nan_count_y}")
+print(f"  包含 Inf (无穷大) 个数: {inf_count_y}")
