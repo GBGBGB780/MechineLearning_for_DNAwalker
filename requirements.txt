@@ -1,0 +1,15 @@
+# 核心深度学习框架
+torch
+
+# 科学计算与数据处理
+numpy
+pandas
+scipy
+scikit-learn
+
+# 数据可视化 (用于 .ipynb 或检查脚本)
+matplotlib
+umap-learn
+
+# pandas 依赖 (用于读写 Excel .xlsx 文件)
+openpyxl
