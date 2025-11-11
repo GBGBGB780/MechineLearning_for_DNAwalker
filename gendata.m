@@ -634,10 +634,6 @@ function [time_out, fam_out, tye_out, cy5_out] = run_dna_motor_simulation(sim_pa
     if isinf(max_k_cis) || isnan(max_k_cis)
         max_k_cis = 1e6; % Bounding
     end
-    max_k_trans = max(k_trans(:));
-    if isinf(max_k_trans) || isnan(max_k_trans)
-        max_k_trans = 1e6; % Bounding
-    end
 
     % 确保 max_val 不为 0
     max_val = max(max(max_k_cis), max(max_k_trans));
@@ -656,14 +652,15 @@ function [time_out, fam_out, tye_out, cy5_out] = run_dna_motor_simulation(sim_pa
     % --- [防护代码开始] ---
     % 设定一个最小 dt (例如 1.2e-6)，
     % 对应最大循环步数 (200*60)/1.2e-6 = 1e10
-    MIN_DT = 1.2e-6; %此处如果运行速度较慢可以将阈值降低比如1.2e-3
+    MIN_DT = 1.2e-5; %此处如果运行速度较慢可以将阈值降低比如1.2e-3
+    %1.2e-5实测24核cpu需要12小时左右
 
     if dt < MIN_DT
         dt = MIN_DT;
     end
 
     if isnan(dt) || isinf(dt) || dt == 0
-        dt = 1e-5; % 备用安全值，如果上面修改了这里也需要进行修改比如1e-2
+        dt = 1e-4; % 备用安全值，如果上面修改了这里也需要进行修改比如1e-2
     end
     % --- [防护代码结束] ---
     
