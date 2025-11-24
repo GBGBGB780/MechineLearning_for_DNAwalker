@@ -117,7 +117,6 @@ fp = fixed_params;
 
 X_local = cell(num_samples, 1);
 
-num_r=0
 parfor i = 1:num_samples
     % 1. 准备参数
     current_params = struct(...
@@ -136,8 +135,7 @@ parfor i = 1:num_samples
     X_local{i} = [fam, tye, cy5]';
 
     if mod(i, 1) == 0
-        num_r=num_r+1
-        fprintf('已完成模拟 %d / %d\n', num_r, num_samples);
+        fprintf('已完成模拟 %d / %d\n', i, num_samples);
     end
 end
 
