@@ -23,16 +23,16 @@ class InverseMLP(nn.Module):
             nn.Dropout(0.2),
 
             # 隐藏层
-            nn.Linear(256, 32),
+            nn.Linear(256, 64),
             nn.ReLU(),
             nn.Dropout(0.2),
 
             # 隐藏层 2
-            nn.Linear(32, 64),
+            nn.Linear(64, 128),
             nn.ReLU(),
 
             # 输出层: 7 个物理参数
-            nn.Linear(64, output_size),
+            nn.Linear(128, output_size),
 
             # 我们预测的是 [0, 1] 范围内的归一化值，Sigmoid 是一个好选择
             # 但在实践中，直接线性输出（下面这行）通常更稳健
