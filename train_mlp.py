@@ -40,7 +40,7 @@ def train():
     # 优化器: Adam 是一个稳健的好选择
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     # 如果50个epoch loss不降，就把学习率除以2
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=50, verbose=True)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=50)
 
     # --- 4. 训练循环 ---
     best_val_loss = float('inf')
@@ -81,8 +81,10 @@ def train():
 
         avg_val_loss = total_val_loss / len(val_loader)
         scheduler.step(avg_val_loss)
-
-        print(f"Epoch {epoch + 1:03d}/{NUM_EPOCHS} | Train Loss: {avg_train_loss:.6f} | Val Loss: {avg_val_loss:.6f}")
+        # 获取当前的学习率
+        current_lr = optimizer.param_groups[0]['lr']
+        # 打印时带上当前的学习率
+        print(f"Epoch {epoch + 1:03d}/{NUM_EPOCHS} | Train Loss: {avg_train_loss:.6f} | Val Loss: {avg_val_loss:.6f} | LR: {current_lr:.8f}")
 
         # --- 保存最佳模型 ---
         if avg_val_loss < best_val_loss:
