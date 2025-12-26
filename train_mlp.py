@@ -8,7 +8,7 @@ from utils import load_and_preprocess_data
 from model import InverseMLP
 
 # --- 1. 设置超参数 ---
-INPUT_SIZE = 36003  # 3 条曲线 * 100 个时间点
+INPUT_SIZE = 23403  # 3 条曲线 * 100 个时间点
 OUTPUT_SIZE = 7  # 7 个物理参数
 LEARNING_RATE = 0.001
 BATCH_SIZE = 64
@@ -39,6 +39,8 @@ def train():
 
     # 优化器: Adam 是一个稳健的好选择
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    # 如果50个epoch loss不降，就把学习率除以2
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=50, verbose=True)
 
     # --- 4. 训练循环 ---
     best_val_loss = float('inf')
@@ -78,6 +80,7 @@ def train():
                 total_val_loss += val_loss.item()
 
         avg_val_loss = total_val_loss / len(val_loader)
+        scheduler.step(avg_val_loss)
 
         print(f"Epoch {epoch + 1:03d}/{NUM_EPOCHS} | Train Loss: {avg_train_loss:.6f} | Val Loss: {avg_val_loss:.6f}")
 
