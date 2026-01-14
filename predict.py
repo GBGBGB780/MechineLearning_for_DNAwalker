@@ -4,27 +4,16 @@ import numpy as np
 import pandas as pd
 import pickle
 import sys
-import configparser
 from scipy.interpolate import interp1d
 
 # 从我们的本地文件中导入
 try:
     from model import InverseMLP
-except ImportError:
-    print("错误: 找不到 'model.py' 文件。")
-    print("请确保 InverseMLP 类的定义 与此脚本位于同一文件夹中。")
+    from config_loader import Config
+except ImportError as e:
+    print(f"错误: 找不到必要的模块: {e}")
+    print("请确保 'model.py' 和 'config_loader.py' 与此脚本位于同一文件夹中。")
     sys.exit(1)
-
-# --- 1. 定义常量 ---
-# (这些必须与您的训练脚本 严格匹配)
-INPUT_SIZE = 23403  # 3 条曲线 * 7801 个时间点
-OUTPUT_SIZE = 7  # 7 个物理参数
-
-MODEL_FILE = 'best_mlp_model.pth'
-X_SCALER_FILE = 'x_scaler.pkl'
-Y_SCALER_FILE = 'y_scaler.pkl'
-CONFIG_FILE = 'configfile.ini'
-DATA_FILE = 'Fig3a_fitting.xlsx'
 
 
 def load_real_experimental_data(config, data_path):
@@ -100,8 +89,15 @@ def predict_parameters():
     print(f"--- 正在加载工具 ---")
     try:
         # a. 加载 Config
-        config = configparser.ConfigParser()
-        config.read(CONFIG_FILE)
+        config = Config()
+        
+        # 从配置获取文件路径和参数
+        INPUT_SIZE = config.get_input_size()
+        OUTPUT_SIZE = config.get_output_size()
+        MODEL_FILE = config.get_model_save_path()
+        X_SCALER_FILE = config.get_x_scaler_file()
+        Y_SCALER_FILE = config.get_y_scaler_file()
+        DATA_FILE = config.get_experimental_data_path()
 
         # b. 加载 Scalers
         with open(X_SCALER_FILE, 'rb') as f:
@@ -110,14 +106,11 @@ def predict_parameters():
             y_scaler = pickle.load(f)
 
         # c. 加载参数名称
-        param_names = [
-            'E_b', 'E_b_azo_trans', 'E_b_azo_cis',
-            'k_mig', 'k0', 'drt_z', 'drt_s'
-        ]
+        param_names = config.get_trainable_param_names()
 
         # d. 加载模型
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = InverseMLP(INPUT_SIZE, OUTPUT_SIZE).to(device)
+        model = InverseMLP(INPUT_SIZE, OUTPUT_SIZE, config).to(device)
         
         # [修改 1] 增加 map_location 以防止在不同设备(CPU/GPU)间切换时报错
         model.load_state_dict(torch.load(MODEL_FILE, map_location=device))
@@ -128,7 +121,7 @@ def predict_parameters():
 
     except Exception as e:
         print(f"*** 致命错误: 无法加载必要的工具文件 ***")
-        print(f"请确保 {MODEL_FILE}, {X_SCALER_FILE}, {Y_SCALER_FILE}, {CONFIG_FILE} 都在此文件夹中。")
+        print(f"请确保所有配置文件和模型文件都在此文件夹中。")
         print(f"错误信息: {e}")
         return
 

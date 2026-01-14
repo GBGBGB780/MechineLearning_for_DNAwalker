@@ -6,22 +6,35 @@ import numpy as np
 # 从我们的本地文件中导入
 from utils import load_and_preprocess_data
 from model import InverseMLP
-
-# --- 1. 设置超参数 ---
-INPUT_SIZE = 23403  # 3 条曲线 * 7801 个时间点
-OUTPUT_SIZE = 7  # 7 个物理参数
-LEARNING_RATE = 0.0005
-BATCH_SIZE = 256
-NUM_EPOCHS = 4000  # 您可以先从50-100开始，看损失曲线
-DATASET_FILE = 'training_dataset.npz'
-MODEL_SAVE_PATH = 'best_mlp_model.pth'
+from config_loader import Config
 
 
 def train():
+    # --- 1. 加载配置 ---
+    print("--- 0. 加载配置文件 ---")
+    config = Config()
+    
+    # 从配置文件读取所有超参数
+    INPUT_SIZE = config.get_input_size()
+    OUTPUT_SIZE = config.get_output_size()
+    LEARNING_RATE = config.get_learning_rate()
+    BATCH_SIZE = config.get_batch_size()
+    NUM_EPOCHS = config.get_num_epochs()
+    DATASET_FILE = config.get_dataset_file()
+    MODEL_SAVE_PATH = config.get_model_save_path()
+    
+    print(f"配置已加载:")
+    print(f"  - 输入维度: {INPUT_SIZE}")
+    print(f"  - 输出维度: {OUTPUT_SIZE}")
+    print(f"  - 学习率: {LEARNING_RATE}")
+    print(f"  - 批次大小: {BATCH_SIZE}")
+    print(f"  - 训练轮数: {NUM_EPOCHS}")
+    print()
+    
     # --- 2. 加载数据 ---
     # 注意：utils.py 中的函数 会自动帮我们处理好一切
     train_loader, val_loader, test_loader, param_names = load_and_preprocess_data(
-        DATASET_FILE, BATCH_SIZE
+        DATASET_FILE, BATCH_SIZE, config
     )
 
     if train_loader is None:
@@ -32,20 +45,22 @@ def train():
     print(f"--- 2. 开始训练 ---")
     print(f"使用设备: {device}")
 
-    model = InverseMLP(INPUT_SIZE, OUTPUT_SIZE).to(device)
+    # 传递config给模型，让模型从配置文件读取结构参数
+    model = InverseMLP(INPUT_SIZE, OUTPUT_SIZE, config).to(device)
 
     # 损失函数: 均方误差(MSE)，因为这是回归问题
     criterion = nn.MSELoss()
 
     # 优化器: Adam 是一个稳健的好选择
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    # 如果50个epoch loss不降，就把学习率除以2
+    
+    # 从配置读取学习率调度器参数
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, 
-        mode='min', 
-        factor=0.5,     # 每次减半
-        patience=30,    # 稍微急一点，30轮不降就调整
-        min_lr=1e-6     # 设置底线，防止死机
+        mode=config.get_scheduler_mode(),
+        factor=config.get_scheduler_factor(),
+        patience=config.get_scheduler_patience(),
+        min_lr=config.get_scheduler_min_lr()
     )
 
     # --- 4. 训练循环 ---
