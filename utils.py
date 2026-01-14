@@ -32,10 +32,12 @@ def load_and_preprocess_data(npz_filename, batch_size=64):
         print(f"错误信息: {e}")
         return None, None, None, None
 
+    # 加一个极小值 1e-9 防止 log(0) 报错
+    Y_data = np.log10(np.abs(Y_data) + 1e-9)
     # --- 预处理 X (输入) ---
-    # 1. 扁平化: 将 (N, 12001, 3) 变为 (N, 36003)
+    # 1. 扁平化: 将 (N, 3, 7801) 变为 (N, 23403)
     num_samples_original = X_data.shape[0]
-    X_flat = X_data.reshape(num_samples_original, -1)  # 形状变为 [N, 36003]
+    X_flat = X_data.reshape(num_samples_original, -1)  # 形状变为 [N, 23403]
     print(f"X 压平后的形状: {X_flat.shape}")
 
     # --- [已修正] 使用更严格的过滤条件 ---
