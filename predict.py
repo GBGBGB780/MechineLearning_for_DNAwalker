@@ -24,11 +24,11 @@ def load_real_experimental_data(config, data_path):
 
     # --- a. 从 config 中获取模拟设置 ---
     try:
-        sim_total_time = float(config["NANOROBOT_MODELING"]["sim_total_time"])
-        num_time_points = int(config['DATA_GENERATION']['num_time_points'])
-        p_unbind_track = float(config['PHYSICAL_PARAMETERS']['p_unbind_track'])
-    except KeyError as e:
-        print(f"错误: 无法从 {CONFIG_FILE} 中读取关键设置: {e}")
+        sim_total_time = config.get_sim_total_time()
+        num_time_points = config.get_num_time_points()
+        p_unbind_track = config.get_p_unbind_track()
+    except Exception as e:
+        print(f"错误: 无法从配置文件中读取关键设置: {e}")
         return None
 
     # --- b. 创建标准时间轴 (必须与训练时 一致) ---
