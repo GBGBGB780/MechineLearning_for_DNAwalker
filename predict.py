@@ -8,11 +8,10 @@ from scipy.interpolate import interp1d
 
 # 从我们的本地文件中导入
 try:
-    from model import InverseCNN
-    from config_loader import Config
+    from inference import NanorobotPredictor
 except ImportError as e:
     print(f"错误: 找不到必要的模块: {e}")
-    print("请确保 'model.py' 和 'config_loader.py' 与此脚本位于同一文件夹中。")
+    print("请确保 'inference.py' 与此脚本位于同一文件夹中。")
     sys.exit(1)
 
 
@@ -85,85 +84,40 @@ def predict_parameters():
     加载模型和数据，执行并打印最终的参数预测。
     """
 
-    # --- 1. 加载所有必要的工具 ---
-    print(f"--- 正在加载工具 ---")
+    # --- 1. 初始化预测器 ---
     try:
-        # a. 加载 Config
-        config = Config()
-        
-        # 从配置获取文件路径和参数
-        INPUT_SIZE = config.get_input_size()
-        OUTPUT_SIZE = config.get_output_size()
-        MODEL_FILE = config.get_model_save_path()
-        X_SCALER_FILE = config.get_x_scaler_file()
-        Y_SCALER_FILE = config.get_y_scaler_file()
-        DATA_FILE = config.get_experimental_data_path()
-
-        # b. 加载 Scalers
-        with open(X_SCALER_FILE, 'rb') as f:
-            x_scaler = pickle.load(f)
-        with open(Y_SCALER_FILE, 'rb') as f:
-            y_scaler = pickle.load(f)
-
-        # c. 加载参数名称
-        param_names = config.get_trainable_param_names()
-
-        # d. 加载模型
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = InverseCNN(INPUT_SIZE, OUTPUT_SIZE, config).to(device)
-        
-        # [修改 1] 增加 map_location 以防止在不同设备(CPU/GPU)间切换时报错
-        model.load_state_dict(torch.load(MODEL_FILE, map_location=device))
-        model.eval()  # ** 必须 ** 设为评估模式
-
-        print(f"成功加载: Config, Scalers, Model, ParamNames")
-        print(f"预测设备: {device}")
-
+        predictor = NanorobotPredictor()
     except Exception as e:
-        print(f"*** 致命错误: 无法加载必要的工具文件 ***")
-        print(f"请确保所有配置文件和模型文件都在此文件夹中。")
-        print(f"错误信息: {e}")
+        print(f"初始化失败: {e}")
         return
 
+    # 获取配置中的数据路径
+    DATA_FILE = predictor.config.get_experimental_data_path()
+
     # --- 2. 加载并处理真实的输入数据 ---
-    X_sample_raw = load_real_experimental_data(config, DATA_FILE)
+    # 注意: load_real_experimental_data 需要 config 对象
+    X_sample_raw = load_real_experimental_data(predictor.config, DATA_FILE)
 
     if X_sample_raw is None:
         print("无法处理输入数据，预测中止。")
         return
 
-    # --- 3. 预处理 (与训练时 完全一致) ---
-    print("\n--- 2. 正在准备模型输入 ---")
-    # a. 扁平化: (3, 7801) -> (1, 23403)
-    X_sample_flat = X_sample_raw.reshape(1, -1)
+    # --- 3. 执行预测 ---
+    print("\n--- 2. 正在执行模型预测 ---")
+    try:
+        predicted_real_params = predictor.predict(X_sample_raw)
+    except Exception as e:
+        print(f"预测出错: {e}")
+        return
 
-    # b. 归一化 (使用 x_scaler)
-    X_sample_scaled = x_scaler.transform(X_sample_flat)
-
-    # c. 转换为 Tensor
-    X_sample_tensor = torch.tensor(X_sample_scaled, dtype=torch.float32).to(device)
-    print(f"输入向量 (1, {X_sample_flat.shape[1]}) 已准备就绪。")
-
-    # --- 4. 执行预测 ---
-    print("\n--- 3. 正在执行模型预测 ---")
-    with torch.no_grad():  # 预测时不需要计算梯度
-        predicted_scaled_params = model(X_sample_tensor)  # (1, 7)
-
-    # --- 5. 逆向转换 (最关键的一步) ---
-    # [修改 2] 逻辑更新：先反归一化得到Log值，再反对数变换(10^x)得到物理值
-    predicted_log_params = y_scaler.inverse_transform(
-        predicted_scaled_params.cpu().numpy()
-    )
-    predicted_real_params = np.power(10, predicted_log_params)
-
-    # --- 6. 打印最终结果 ---
-    print("\n--- 4. 预测的物理参数 ---")
+    # --- 4. 打印最终结果 ---
+    print("\n--- 3. 预测的物理参数 ---")
     print("=" * 30)
 
+    param_names = predictor.get_param_names()
     for i in range(len(param_names)):
         name = param_names[i]
         pred_val = predicted_real_params[0, i]
-        # [修改 3] 使用 .6e 科学计数法，方便查看跨度很大的物理量
         print(f"{name:<15}: {pred_val:<15.6e}")
 
     print("=" * 30)
