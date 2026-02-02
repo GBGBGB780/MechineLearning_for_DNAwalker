@@ -7,35 +7,28 @@ class InverseCNN(nn.Module):
     注意：内部已经升级为强大的 1D-CNN (一维卷积神经网络)。
     """
 
-    def __init__(self, input_size, output_size, config=None):
+    def __init__(self, input_size, output_size, config):
         """
         初始化模型
         
         Args:
             input_size: 输入维度
             output_size: 输出维度
-            config: Config对象，如果为None则使用硬编码值（向后兼容）
+            config: Config对象 (必须提供)
         """
         super(InverseCNN, self).__init__()
         
-        # 从配置读取或使用默认值
-        if config is not None:
-            self.num_curves = config.get_num_curves()
-            self.seq_length = config.get_seq_length()
-            conv1 = config.get_conv1_params()
-            conv2 = config.get_conv2_params()
-            conv3 = config.get_conv3_params()
-            conv4 = config.get_conv4_params()
-            fc1_features = config.get_fc1_out_features()
-        else:
-            # 默认硬编码值（向后兼容）
-            self.num_curves = 3
-            self.seq_length = 7801
-            conv1 = {'out_channels': 32, 'kernel_size': 21, 'stride': 2, 'padding': 10}
-            conv2 = {'out_channels': 64, 'kernel_size': 5, 'stride': 2, 'padding': 2}
-            conv3 = {'out_channels': 128, 'kernel_size': 5, 'stride': 2, 'padding': 2}
-            conv4 = {'out_channels': 256, 'kernel_size': 3, 'stride': 2, 'padding': 1}
-            fc1_features = 128
+        if config is None:
+            raise ValueError("Config object is required for InverseCNN initialization.")
+            
+        # 从配置读取参数
+        self.num_curves = config.get_num_curves()
+        self.seq_length = config.get_seq_length()
+        conv1 = config.get_conv1_params()
+        conv2 = config.get_conv2_params()
+        conv3 = config.get_conv3_params()
+        conv4 = config.get_conv4_params()
+        fc1_features = config.get_fc1_out_features()
         
         # --- 卷积特征提取器 (Feature Extractor) ---
         self.features = nn.Sequential(
