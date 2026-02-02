@@ -173,7 +173,7 @@ class Config:
     
     def get_num_time_points(self):
         """获取时间点数量"""
-        return self.config.getint('DATA_GENERATION', 'num_time_points')
+        return self.get_seq_length()
     
     def get_dataset_file(self):
         """获取数据集文件名"""
@@ -201,6 +201,37 @@ class Config:
     def get_p_unbind_track(self):
         """获取轨道解绑概率"""
         return self.config.getfloat('PHYSICAL_PARAMETERS', 'p_unbind_track')
+
+    # ==================== TRAINING_PARAMETER_RANGES ====================
+
+    def get_param_ranges(self):
+        """
+        获取待训练参数的范围 [min, max]
+        
+        Returns:
+            dict: {param_name: (min_val, max_val)}
+        """
+        ranges = {}
+        # 首先读取默认范围
+        default_range_str = self.config.get('TRAINING_PARAMETER_RANGES', 'default_range', fallback='-3.0, 3.0')
+        default_min, default_max = map(float, default_range_str.split(','))
+        
+        # 获取所有待训练参数
+        param_names = self.get_trainable_param_names()
+        
+        for name in param_names:
+            range_str = self.config.get('TRAINING_PARAMETER_RANGES', name, fallback=None)
+            if range_str:
+                try:
+                    min_val, max_val = map(float, range_str.split(','))
+                    ranges[name] = (min_val, max_val)
+                except ValueError:
+                    print(f"Warning: Invalid range format for {name}, use default.")
+                    ranges[name] = (default_min, default_max)
+            else:
+                ranges[name] = (default_min, default_max)
+                
+        return ranges
     
     # ==================== NANOROBOT_MODELING ====================
     
