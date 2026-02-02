@@ -5,7 +5,7 @@ import pickle
 import sys
 
 # 从我们的本地文件中导入
-from model import InverseMLP
+from model import InverseCNN
 
 
 def predict_from_new_data():
@@ -29,7 +29,7 @@ def predict_from_new_data():
     MODEL_SAVE_PATH = 'best_mlp_model.pth'
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = InverseMLP(INPUT_SIZE, OUTPUT_SIZE).to(device)
+    model = InverseCNN(INPUT_SIZE, OUTPUT_SIZE).to(device)
 
     try:
         # 增加 map_location 以支持 CPU/GPU 切换

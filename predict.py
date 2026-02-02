@@ -8,7 +8,7 @@ from scipy.interpolate import interp1d
 
 # 从我们的本地文件中导入
 try:
-    from model import InverseMLP
+    from model import InverseCNN
     from config_loader import Config
 except ImportError as e:
     print(f"错误: 找不到必要的模块: {e}")
@@ -110,7 +110,7 @@ def predict_parameters():
 
         # d. 加载模型
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = InverseMLP(INPUT_SIZE, OUTPUT_SIZE, config).to(device)
+        model = InverseCNN(INPUT_SIZE, OUTPUT_SIZE, config).to(device)
         
         # [修改 1] 增加 map_location 以防止在不同设备(CPU/GPU)间切换时报错
         model.load_state_dict(torch.load(MODEL_FILE, map_location=device))

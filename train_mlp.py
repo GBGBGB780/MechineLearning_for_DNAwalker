@@ -6,7 +6,7 @@ import numpy as np
 
 # 从我们的本地文件中导入
 from utils import load_and_preprocess_data
-from model import InverseMLP
+from model import InverseCNN
 from config_loader import Config
 
 
@@ -47,7 +47,7 @@ def train():
     print(f"使用设备: {device}")
 
     # 传递config给模型，让模型从配置文件读取结构参数
-    model = InverseMLP(INPUT_SIZE, OUTPUT_SIZE, config).to(device)
+    model = InverseCNN(INPUT_SIZE, OUTPUT_SIZE, config).to(device)
 
     # 损失函数: 均方误差(MSE)，因为这是回归问题
     criterion = nn.MSELoss()

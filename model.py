@@ -2,10 +2,9 @@
 import torch
 import torch.nn as nn
 
-class InverseMLP(nn.Module):
+class InverseCNN(nn.Module):
     """
-    注意：虽然类名还叫 InverseMLP 以保持兼容性，
-    但内部已经升级为强大的 1D-CNN (一维卷积神经网络)。
+    注意：内部已经升级为强大的 1D-CNN (一维卷积神经网络)。
     """
 
     def __init__(self, input_size, output_size, config=None):
@@ -17,7 +16,7 @@ class InverseMLP(nn.Module):
             output_size: 输出维度
             config: Config对象，如果为None则使用硬编码值（向后兼容）
         """
-        super(InverseMLP, self).__init__()
+        super(InverseCNN, self).__init__()
         
         # 从配置读取或使用默认值
         if config is not None:
