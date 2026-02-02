@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+import os
 
 # 从我们的本地文件中导入
 from utils import load_and_preprocess_data
@@ -23,6 +24,12 @@ def train():
     NUM_EPOCHS = config.get_num_epochs()
     DATASET_FILE = config.get_dataset_file()
     MODEL_SAVE_PATH = config.get_model_save_path()
+    
+    # Ensure output directory exists
+    output_dir = os.path.dirname(MODEL_SAVE_PATH)
+    if not os.path.exists(output_dir):
+        print(f"创建输出目录: {output_dir}")
+        os.makedirs(output_dir, exist_ok=True)
     
     print(f"配置已加载:")
     print(f"  - 输入维度: {INPUT_SIZE}")

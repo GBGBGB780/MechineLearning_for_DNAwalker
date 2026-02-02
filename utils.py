@@ -2,6 +2,7 @@
 import numpy as np
 import pickle
 import torch
+import os
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -101,6 +102,11 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
     # 从config读取scaler文件路径
     x_scaler_file = config.get_x_scaler_file()
     y_scaler_file = config.get_y_scaler_file()
+    
+    # Ensure scaler output directory exists
+    scaler_dir = os.path.dirname(x_scaler_file)
+    if scaler_dir and not os.path.exists(scaler_dir):
+        os.makedirs(scaler_dir, exist_ok=True)
     
     with open(x_scaler_file, 'wb') as f:
         pickle.dump(x_scaler, f)

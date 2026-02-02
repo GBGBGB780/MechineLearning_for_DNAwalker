@@ -62,17 +62,24 @@ class Config:
         """获取训练轮数"""
         return self.config.getint('TRAINING', 'num_epochs')
     
+    def get_output_path(self):
+        """获取输出目录路径"""
+        return self.config.get('PATHS', 'output_path')
+
     def get_model_save_path(self):
         """获取模型保存路径"""
-        return self.config.get('TRAINING', 'model_save_path')
+        filename = self.config.get('TRAINING', 'model_save_path')
+        return os.path.join(self.get_output_path(), filename)
     
     def get_x_scaler_file(self):
         """获取X数据归一化器保存路径"""
-        return self.config.get('TRAINING', 'x_scaler_file')
+        filename = self.config.get('TRAINING', 'x_scaler_file')
+        return os.path.join(self.get_output_path(), filename)
     
     def get_y_scaler_file(self):
         """获取Y数据归一化器保存路径"""
-        return self.config.get('TRAINING', 'y_scaler_file')
+        filename = self.config.get('TRAINING', 'y_scaler_file')
+        return os.path.join(self.get_output_path(), filename)
     
     # 学习率调度器参数
     def get_scheduler_mode(self):
@@ -170,7 +177,8 @@ class Config:
     
     def get_dataset_file(self):
         """获取数据集文件名"""
-        return self.config.get('DATA_GENERATION', 'output_filename')
+        filename = self.config.get('DATA_GENERATION', 'output_filename')
+        return os.path.join(self.get_output_path(), filename)
     
     # ==================== PHYSICAL_PARAMETERS ====================
     
