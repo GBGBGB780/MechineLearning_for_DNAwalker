@@ -57,6 +57,10 @@ class Config:
     def get_batch_size(self):
         """获取批次大小"""
         return self.config.getint('TRAINING', 'batch_size')
+
+    def get_loss_function(self):
+        """获取损失函数名称 (default: SmoothL1Loss)"""
+        return self.config.get('TRAINING', 'loss_function', fallback='SmoothL1Loss')
     
     def get_num_epochs(self):
         """获取训练轮数"""

@@ -56,8 +56,17 @@ def train():
     # 传递config给模型，让模型从配置文件读取结构参数
     model = InverseCNN(INPUT_SIZE, OUTPUT_SIZE, config).to(device)
 
-    # 损失函数: 均方误差(MSE)，因为这是回归问题
-    criterion = nn.MSELoss()
+    # 损失函数 selection
+    loss_fn_name = config.get_loss_function()
+    if loss_fn_name == 'L1Loss':
+        criterion = nn.L1Loss()
+        print("Using Loss Function: L1Loss (MAE)")
+    elif loss_fn_name == 'SmoothL1Loss':
+        criterion = nn.SmoothL1Loss()
+        print("Using Loss Function: SmoothL1Loss")
+    else:
+        criterion = nn.MSELoss()
+        print(f"Using Loss Function: MSELoss (Default) - Config was '{loss_fn_name}'")
 
     # 优化器: Adam 是一个稳健的好选择
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
