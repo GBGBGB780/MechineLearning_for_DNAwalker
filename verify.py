@@ -7,8 +7,7 @@ import pandas as pd
 import subprocess
 
 # Local imports
-from inference import NanorobotPredictor
-from predict import load_real_experimental_data
+from predict import NanorobotPredictor, load_real_experimental_data
 from config_loader import Config
 
 
@@ -76,8 +75,8 @@ class MATLABSolver:
         command = f"matlab -nodisplay -nosplash -r \"run('{self.script_name}'); exit\""
         
         try:
-            # 设置超时，防止死循环
-            result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=300)
+            # 设置超时，防止死循环 (增加到 1200秒 = 20分钟)
+            result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=1200)
             
             if result.returncode != 0:
                 print(f"MATLAB execution failed with return code {result.returncode}")
