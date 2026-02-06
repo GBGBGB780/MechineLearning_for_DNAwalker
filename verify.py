@@ -11,103 +11,104 @@ from predict import NanorobotPredictor, load_real_experimental_data
 from config_loader import Config
 
 
-class MATLABSolver:
+# --- 1. 配置常量 (来自 test_output_in_matlab.py) ---
+MATLAB_SCRIPT_NAME = "mechanics_and_kinetics_of_the_winding_DNA_motor_kinetics_10minvis_10minUV.m"
+MATLAB_INPUT_FILE = "matlab_input_params.txt"
+MATLAB_OUTPUT_FILE = "matlab_output_results.csv"
+
+# --- 2. 写入输入文件 ---
+
+def write_matlab_input(params_dict):
     """
-    封装 MATLAB 模拟器的调用逻辑。
-    负责将参数写入文件，调用 MATLAB 脚本，并读取结果 CSV。
-    (直接集成在 verify.py 中)
+    将用户输入的参数写入一个简单的文本文件供 MATLAB 读取。
+    (Directly copied logic from test_output_in_matlab.py)
     """
-    
-    def __init__(self, config_file='configfile.ini'):
-        self.config = Config(config_file)
-        self.input_file = "matlab_input_params.txt"
-        self.output_file = "matlab_output_results.csv"
-        # 这里的脚本名称可以硬编码或者放入 config
-        self.script_name = "mechanics_and_kinetics_of_the_winding_DNA_motor_kinetics_10minvis_10minUV.m"
-        
-        # 确保 MATLAB 脚本存在
-        if not os.path.exists(self.script_name):
-            print(f"Warning: MATLAB script '{self.script_name}' not found in current directory.")
-
-    def run(self, params_dict):
-        """
-        运行模拟。
-        
-        Args:
-            params_dict: 包含物理参数名和值的字典
-            
-        Returns:
-            pd.DataFrame: 模拟结果 (Time, sim_fam, sim_tye, sim_cy5)，如果失败返回 None
-        """
-        # 1. 写入输入文件
-        if not self._write_input_file(params_dict):
-            return None
-            
-        # 2. 调用 MATLAB
-        if not self._call_matlab():
-            return None
-            
-        # 3. 读取输出文件
-        return self._read_output_file()
-
-    def _write_input_file(self, params):
-        """写入 matlab_input_params.txt"""
-        try:
-            with open(self.input_file, 'w') as f:
-                for name, value in params.items():
-                    f.write(f"{name}={value}\n")
-                f.write("END_OF_PARAMS=1\n")
-            return True
-        except IOError as e:
-            print(f"Error writing MATLAB input file: {e}")
-            return False
-
-    def _call_matlab(self):
-        """使用 subprocess 调用 MATLAB"""
-        # 清理旧结果
-        if os.path.exists(self.output_file):
-            try:
-                os.remove(self.output_file)
-            except OSError:
-                pass
-
-        print(f"--- Calling MATLAB script: {self.script_name} ---")
-        command = f"matlab -nodisplay -nosplash -r \"run('{self.script_name}'); exit\""
-        
-        try:
-            # 设置超时，防止死循环 (增加到 1200秒 = 20分钟)
-            result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=1200)
-            
-            if result.returncode != 0:
-                print(f"MATLAB execution failed with return code {result.returncode}")
-                # print(result.stderr) 
-                return False
+    print(f"正在写入 MATLAB 输入文件: {MATLAB_INPUT_FILE}")
+    try:
+        with open(MATLAB_INPUT_FILE, 'w') as f:
+            # 写入参数名和值
+            print("\n--- 写入 MATLAB 的参数 (Formatted) ---")
+            for name, value in params_dict.items():
+                if name == 'k0':
+                    # k0通常很小 (e-7)，且用户要求不要有e。使用 .10f 保留足够精度
+                    line = f"{name}={value:.10f}"
+                else:
+                    # 其他参数保留 3 位小数，且不使用科学计数法
+                    line = f"{name}={value:.3f}"
                 
-            return True
-        except subprocess.TimeoutExpired:
-            print("MATLAB execution timed out.")
-            return False
-        except FileNotFoundError:
-            print("MATLAB executable not found. Please ensure 'matlab' is in your PATH.")
+                f.write(line + "\n")
+                print(line)
+            f.write("END_OF_PARAMS=1\n")
+        print("输入文件写入完毕。")
+        return True
+    except IOError as e:
+        print(f"Error writing MATLAB input file: {e}")
+        return False
+
+
+# --- 3. 调用 MATLAB 脚本 ---
+
+def run_matlab_script(script_name=MATLAB_SCRIPT_NAME):
+    """
+    使用 subprocess 调用 MATLAB 命令行运行脚本。
+    (Directly copied logic from test_output_in_matlab.py)
+    """
+    print(f"\n--- 正在调用 MATLAB 运行脚本 {script_name} ---")
+
+    # 清理旧的输出文件，确保我们读取的是新的结果
+    if os.path.exists(MATLAB_OUTPUT_FILE):
+        os.remove(MATLAB_OUTPUT_FILE)
+
+    # MATLAB 命令：-r 执行命令 (run 和 exit)
+    command = f"matlab -nodisplay -nosplash -r \"run('{script_name}'); exit\""
+
+    try:
+        # 捕获 MATLAB 的 stdout 和 stderr
+        # 增大超时时间到 1200s (20min) 以防止复杂仿真超时
+        print("该步骤耗时较长，耐心等待...")
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=1200)
+
+        if result.returncode != 0:
+            print(f"*** 错误: MATLAB 运行失败 (退出码: {result.returncode}) ***")
+            print("\n--- MATLAB 错误输出 (Stderr) ---")
+            print(result.stderr)
+            print("-----------------------------------------")
             return False
 
-    def _read_output_file(self):
-        """读取 matlab_output_results.csv"""
-        if not os.path.exists(self.output_file):
-            print(f"Error: MATLAB output file '{self.output_file}' not found.")
-            return None
-            
-        try:
-            df = pd.read_csv(self.output_file)
-            # 重命名列以匹配预期
-            # 假设 MATLAB 输出是 Time, FAM, TYE, CY5
-            # 我们将其映射为 sim_fam, sim_tye, sim_cy5
-            rename_map = {'FAM': 'sim_fam', 'TYE': 'sim_tye', 'CY5': 'sim_cy5'}
-            df = df.rename(columns=rename_map)
-            return df
-        except Exception as e:
-            print(f"Error reading MATLAB output CSV: {e}")
-            return None
+        print("MATLAB 脚本运行成功。")
+        return True
+
+    except subprocess.TimeoutExpired:
+        print("\n*** 错误: MATLAB 脚本运行超时 (超过 20 分钟)。***")
+        return False
+    except FileNotFoundError:
+        print("\n*** 致命错误: 找不到 'matlab' 命令。请确保 MATLAB 已安装且在环境变量中。***")
+        return False
+
+
+# --- 4. 读取 MATLAB 结果 ---
+
+def read_matlab_output():
+    """
+    从 MATLAB 生成的 CSV 文件中读取最终结果。
+    (Directly copied logic from test_output_in_matlab.py)
+    """
+    print(f"\n正在读取结果文件: {MATLAB_OUTPUT_FILE}")
+    try:
+        # 假设 MATLAB 输出是 Time, FAM, TYE, CY5
+        sim_results_df = pd.read_csv(MATLAB_OUTPUT_FILE)
+
+        # 调整列名以便后续展示
+        sim_results_df = sim_results_df.rename(columns={'FAM': 'sim_fam', 'TYE': 'sim_tye', 'CY5': 'sim_cy5'})
+
+        return sim_results_df
+
+    except FileNotFoundError:
+        print(f"错误: 找不到 MATLAB 输出文件 {MATLAB_OUTPUT_FILE}。请检查 MATLAB 脚本是否成功写入。")
+        return None
+    except Exception as e:
+        print(f"读取 CSV 文件时发生错误: {e}")
+        return None
 
 
 def verify_and_plot():
@@ -123,7 +124,7 @@ def verify_and_plot():
     # --- 1. 初始化 ---
     try:
         predictor = NanorobotPredictor()
-        solver = MATLABSolver()
+        # solver = MATLABSolver() # Removed
     except Exception as e:
         print(f"初始化失败: {e}")
         return
@@ -151,9 +152,14 @@ def verify_and_plot():
         params_dict[name] = val
         print(f"  {name}: {val:.6e}")
         
-    # --- 4. 运行 MATLAB 模拟 ---
+    # --- 4. 运行 MATLAB 模拟 (Refitting) ---
     print("\n--- 运行 MATLAB 模拟 (Refitting) ---")
-    sim_df = solver.run(params_dict)
+    
+    # 使用新集成的函数调用逻辑
+    sim_df = None
+    if write_matlab_input(params_dict):
+        if run_matlab_script():
+             sim_df = read_matlab_output()
     
     if sim_df is None:
         print("MATLAB 模拟失败，无法生成对比图。")
