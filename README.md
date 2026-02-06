@@ -88,7 +88,7 @@
 3.  (可选) 修改 `configfile.ini` 或脚本顶部的 `num_samples` (推荐 10000+)。
 4.  运行脚本。
     *   *提示*: 首次运行会启动并行池（Parpool），可能需要几十秒。
-    *   *输出*: 脚本运行结束后，当前目录下会生成 **`training_dataset.mat`** (约几百MB)。
+    *   *输出*: 脚本运行结束后，当前目录下会生成 **`training_dataset.mat`**。
 
 ### Step 2: 训练模型 (Model Training)
 **目的**: 训练神经网络。
@@ -175,7 +175,33 @@ The model predicts the following 7 parameters:
 | **`drt_z`** | Splitting Dist. (Unzipping) | 0.0 ~ 1.0 | nm |
 | **`drt_s`** | Splitting Dist. (Shearing) | 0.0 ~ 1.0 | nm |
 
-## 4. Work Flow Details
+## 4. File Structure (Files)
+
+### Core Scripts
+*   **`gendata.m`** (Matlab): **[Step 1]** Data generation script.
+    *   Uses Latin Hypercube Sampling (LHS) to sample parameters within specified ranges.
+    *   Utilizes a Parallel Computing Pool (Parpool) for large-scale simulations.
+    *   Saves results to `training_dataset.mat`.
+*   **`train_mlp.py`** (Python): **[Step 2]** Model training script.
+    *   Loads the .mat dataset, performs cleaning and standardization.
+    *   Trains the CNN model and saves the best weights to `results/best_mlp_model.pth`.
+*   **`verify.py`** (Python): **[Step 3]** Inference and prediction script.
+    *   Reads the experimental data Excel file.
+    *   Loads the trained model for inference and outputs the predicted parameters.
+    *   Automatically generates `matlab_input_params.txt` for verification.
+*   **`verify.m`** (Matlab): **[Step 4]** Verification script.
+    *   Reads `matlab_input_params.txt`.
+    *   Runs a high-precision physical simulation based on the predicted parameters.
+    *   Plots a comparison graph between "Experimental Data Points" and the "Predicted Simulation Curve".
+
+### Configuration & Helpers
+*   **`configfile.ini`**: Global configuration file. All parameter ranges, file paths, and network architecture settings are modified here.
+*   **`model.py`**: Defines the `InverseCNN` neural network architecture.
+*   **`inference.py`**: Defines the `NanorobotPredictor` class, encapsulating complex prediction logic.
+*   **`utils.py`**: Data preprocessing tools (Log transformation, Standardization, Data loading).
+*   **`predict.py`**: Helper script called by `verify.py` to load real data.
+
+## 5. Work Flow Details
 
 ### Prerequisites
 *   **MATLAB**: R2021b+ with Parallel Computing Toolbox.
@@ -208,7 +234,7 @@ Open MATLAB and run `verify.m`.
 *   **Plot**: Overlays the simulation result (lines) on top of your experimental data (dots).
 *   **Success**: If the lines match the dots, the prediction is accurate.
 
-## 5. Troubleshooting
+## 6. Troubleshooting
 *   **Memory Errors in MATLAB**: Reduce `num_samples` or the batch size in `gendata.m`.
 *   **Python Imports**: Ensure you are in the correct directory having `utils.py`, `model.py`, etc.
 *   **Poor Fit**:
