@@ -20,7 +20,7 @@ disp('开始生成数据集...');
 tic; % 开始计时
 
 % --- 从您的需求中定义 ---
-target_num_samples = 15000;      % 目标合格样本总数
+target_num_samples = 15;      % 目标合格样本总数
 initial_sample_ratio = 1.5;       % 初始采样冗余比例（生成1.5倍样本以应对质量过滤）
 num_samples = round(target_num_samples * initial_sample_ratio);  % 初始生成样本数：22500
 
@@ -167,58 +167,39 @@ disp('...所有并行模拟已完成。');
 disp('========================================');
 disp('正在进行数据质量验证...');
 
-% 5.1 验证初始样本
+% 5.1 验证初始样本 (分批处理以节省内存)
 valid_indices = true(num_samples, 1);
 invalid_reasons = cell(num_samples, 1);
 
 MIN_DT_THRESHOLD = 1.2e-5;  % dt 阈值，与模拟函数中的 MIN_DT 一致
 
-parfor i = 1:num_samples
-    fam = X(i, :, 1);
-    tye = X(i, :, 2);
-    cy5 = X(i, :, 3);
-    dt_this = dt_records(i);
+batch_size = 5000; % 为了防止内存溢出，分批进行检测
+fprintf('开始分批质量检测 (批大小: %d)...\n', batch_size);
+
+for b_start = 1:batch_size:num_samples
+    b_end = min(b_start + batch_size - 1, num_samples);
+    current_idx = b_start:b_end;
+    current_count = length(current_idx);
     
-    % 内联验证逻辑
-    is_valid = true;
-    reason = '';
+    % 提取当前批次数据 (避免一次性 broadcasting 整个 X)
+    X_batch = X(current_idx, :, :);
+    dt_batch = dt_records(current_idx);
     
-    % 检查 0: dt 是否被强制调整（新增）
-    % 如果 dt 达到阈值，说明原始计算需要的 dt 极小，参数组合可能导致 DNA walker 无法正常工作
-    if dt_this <= MIN_DT_THRESHOLD
-        is_valid = false;
-        reason = sprintf('dt = %.2e (too small, slow dynamics)', dt_this);
+    valid_batch = true(current_count, 1);
+    reasons_batch = cell(current_count, 1);
+    
+    % 并行处理当前批次
+    parfor k = 1:current_count
+        % 调用验证函数
+        [valid_batch(k), reasons_batch{k}] = validate_single_sample(...
+            X_batch(k, :, 1), X_batch(k, :, 2), X_batch(k, :, 3), ...
+            dt_batch(k), MIN_DT_THRESHOLD);
     end
     
-    % 检查 1: NaN/Inf
-    if is_valid && (any(isnan(fam)) || any(isnan(tye)) || any(isnan(cy5)) || ...
-       any(isinf(fam)) || any(isinf(tye)) || any(isinf(cy5)))
-        is_valid = false;
-        reason = 'Contains NaN or Inf';
-    end
+    valid_indices(current_idx) = valid_batch;
+    invalid_reasons(current_idx) = reasons_batch;
     
-    % 检查 2: 曲线变化范围
-    if is_valid
-        fam_change = max(fam) - min(fam);
-        tye_change = max(tye) - min(tye);
-        cy5_change = max(cy5) - min(cy5);
-        
-        if fam_change <= 0.02
-            is_valid = false;
-            reason = sprintf('FAM change %.4f >= 0.02', fam_change);
-        elseif tye_change <= 0.6
-            is_valid = false;
-            reason = sprintf('TYE change %.4f >= 0.6', tye_change);
-        elseif cy5_change <= 0.02
-            is_valid = false;
-            reason = sprintf('CY5 change %.4f >= 0.02', cy5_change);
-        end
-    end
-    
-    valid_indices(i) = is_valid;
-    if ~is_valid
-        invalid_reasons{i} = reason;
-    end
+    fprintf('  批次 %d-%d 完成检测。\n', b_start, b_end);
 end
 
 num_valid = sum(valid_indices);
@@ -245,21 +226,21 @@ max_rounds = 10;  % 最大补充轮数，防止无限循环
 while num_valid < target_num_samples && round_num <= max_rounds
     needed = target_num_samples - num_valid;
     extra_generate = ceil(needed * 1.3);  % 多生成30%作为冗余
-    
+
     fprintf('\n========================================\n');
     fprintf('=== 第 %d 轮补充采样 ===\n', round_num);
     fprintf('当前合格数: %d / %d\n', num_valid, target_num_samples);
     fprintf('需要补充: %d 个样本\n', needed);
     fprintf('实际生成: %d 个样本 (含30%%冗余)\n', extra_generate);
     fprintf('========================================\n');
-    
+
     % 生成新的 LHS 样本
     lhs_additional = lhsdesign(extra_generate, length(param_names));
     Y_additional = min_vals + (max_vals - min_vals) .* lhs_additional;
-    
+
     % 运行补充模拟
     X_additional_local = cell(extra_generate, 1);
-    
+
     parfor i = 1:extra_generate
         current_params = struct(...
             'E_b',           Y_additional(i, 1), ...
@@ -270,89 +251,56 @@ while num_valid < target_num_samples && round_num <= max_rounds
             'drt_z',         Y_additional(i, 6), ...
             'drt_s',         Y_additional(i, 7) ...
         );
-        
+
         [time, fam, tye, cy5, dt_used] = run_dna_motor_simulation(current_params, fp);
         X_additional_local{i} = struct('signals', [fam, tye, cy5]', 'dt_used', dt_used);
-        
+
         if mod(i, 100) == 0
             fprintf('  补充模拟进度: %d / %d\n', i, extra_generate);
         end
     end
-    
+
     % 合并并验证补充样本
     % 分离信号和 dt 信息
     dt_additional = zeros(extra_generate, 1);
     X_additional_temp = cell(extra_generate, 1);
-    
+
     for i = 1:extra_generate
         X_additional_temp{i} = X_additional_local{i}.signals;
         dt_additional(i) = X_additional_local{i}.dt_used;
     end
-    
+
     X_additional = cat(3, X_additional_temp{:});
     X_additional = permute(X_additional, [3,1,2]);
-    
+
     valid_additional = true(extra_generate, 1);
     invalid_additional = cell(extra_generate, 1);
-    
+
     parfor i = 1:extra_generate
         fam = X_additional(i, :, 1);
         tye = X_additional(i, :, 2);
         cy5 = X_additional(i, :, 3);
         dt_this = dt_additional(i);
-        
-        is_valid = true;
-        reason = '';
-        
-        % 检查 dt
-        if dt_this <= MIN_DT_THRESHOLD
-            is_valid = false;
-            reason = sprintf('dt = %.2e (too small, slow dynamics)', dt_this);
-        end
-        
-        if is_valid && (any(isnan(fam)) || any(isnan(tye)) || any(isnan(cy5)) || ...
-           any(isinf(fam)) || any(isinf(tye)) || any(isinf(cy5)))
-            is_valid = false;
-            reason = 'Contains NaN or Inf';
-        end
-        
-        if is_valid
-            fam_change = max(fam) - min(fam);
-            tye_change = max(tye) - min(tye);
-            cy5_change = max(cy5) - min(cy5);
-            
-            if fam_change >= 0.02
-                is_valid = false;
-                reason = sprintf('FAM change %.4f >= 0.02', fam_change);
-            elseif tye_change >= 0.6
-                is_valid = false;
-                reason = sprintf('TYE change %.4f >= 0.6', tye_change);
-            elseif cy5_change >= 0.02
-                is_valid = false;
-                reason = sprintf('CY5 change %.4f >= 0.02', cy5_change);
-            end
-        end
-        
-        valid_additional(i) = is_valid;
-        if ~is_valid
-            invalid_additional{i} = reason;
-        end
+
+        % --- 使用封装的验证函数 ---
+        [valid_additional(i), invalid_additional{i}] = validate_single_sample(...
+            fam, tye, cy5, dt_this, MIN_DT_THRESHOLD);
     end
-    
+
     num_valid_additional = sum(valid_additional);
     fprintf('补充样本合格数: %d / %d (%.1f%%)\n', ...
         num_valid_additional, extra_generate, 100*num_valid_additional/extra_generate);
-    
+
     % 合并到总样本集
     X = cat(1, X, X_additional);
     Y = [Y; Y_additional];
     dt_records = [dt_records; dt_additional];
     valid_indices = [valid_indices; valid_additional];
     invalid_reasons = [invalid_reasons; invalid_additional];
-    
+
     num_valid = sum(valid_indices);
     fprintf('累计合格样本数: %d / %d\n', num_valid, target_num_samples);
-    
+
     round_num = round_num + 1;
 end
 
@@ -360,20 +308,20 @@ end
 fprintf('\n========================================\n');
 if num_valid >= target_num_samples
     fprintf('✓ 成功获得足够的合格样本！\n');
-    
+
     % 从所有合格样本中选取前 target_num_samples 个
     valid_idx_list = find(valid_indices);
     selected_indices = valid_idx_list(1:target_num_samples);
-    
+
     X_final = X(selected_indices, :, :);
     Y_final = Y(selected_indices, :);
-    
+
     fprintf('最终样本数: %d\n', target_num_samples);
 else
     fprintf('⚠ 警告：未能获得足够的合格样本！\n');
     fprintf('目标: %d, 实际获得: %d\n', target_num_samples, num_valid);
     fprintf('将保存所有合格样本。\n');
-    
+
     X_final = X(valid_indices, :, :);
     Y_final = Y(valid_indices, :);
 end
@@ -399,16 +347,58 @@ fprintf('  Y_final (输入): [%d, %d] (样本, 参数)\n', size(Y_final));
 disp('  param_names (标签): [1, 7] (参数名称)');
 fprintf('\n数据质量保证:\n');
 fprintf('  ✓ 所有样本均无 NaN/Inf 值\n');
-fprintf('  ✓ FAM 曲线变化 ≤ 0.02\n');
-fprintf('  ✓ TYE 曲线变化 ≤ 0.6\n');
-fprintf('  ✓ CY5 曲线变化 ≤ 0.02\n');
+fprintf('  ✓ FAM 曲线变化 ≥ 0.02\n');
+fprintf('  ✓ TYE 曲线变化 ≥ 0.6\n');
+fprintf('  ✓ CY5 曲线变化 ≥ 0.02\n');
 disp('----------------------------------------------------');
+disp('模拟完成, 即将退出。');
+exit;
+
+
+%% 8. 单样本验证函数 (本地函数)
+function [is_valid, reason] = validate_single_sample(fam, tye, cy5, dt_this, min_dt_threshold)
+    % 统一的样本质量验证逻辑
+    % 输入: 3条曲线, 实际dt, 最小dt阈值
+    % 输出: 是否合格, 拒绝原因
+
+    is_valid = true;
+    reason = '';
+
+    % 检查 0: dt 是否被强制调整
+    if dt_this <= min_dt_threshold
+        is_valid = false;
+        reason = sprintf('dt = %.2e (too small, slow dynamics)', dt_this);
+    end
+
+    % 检查 1: NaN/Inf
+    if is_valid && (any(isnan(fam)) || any(isnan(tye)) || any(isnan(cy5)) || ...
+       any(isinf(fam)) || any(isinf(tye)) || any(isinf(cy5)))
+        is_valid = false;
+        reason = 'Contains NaN or Inf';
+    end
+
+    % 检查 2: 曲线变化范围
+    if is_valid
+        fam_change = max(fam) - min(fam);
+        tye_change = max(tye) - min(tye);
+        cy5_change = max(cy5) - min(cy5);
+
+        % 使用 <= 判断是否"变化过小" (根据用户要求)
+        if fam_change <= 0.02
+            is_valid = false;
+            reason = sprintf('FAM change %.4f <= 0.02', fam_change);
+        elseif tye_change <= 0.6
+            is_valid = false;
+            reason = sprintf('TYE change %.4f <= 0.6', tye_change);
+        elseif cy5_change <= 0.02
+            is_valid = false;
+            reason = sprintf('CY5 change %.4f <= 0.02', cy5_change);
+        end
+    end
+end
 
 
 %% 7. 核心模拟函数 (本地函数)
-% -------------------------------------------------------------------------
-% ** 这是您提供的 .m 脚本的核心，已封装为一个函数 **
-% -------------------------------------------------------------------------
 function [time_out, fam_out, tye_out, cy5_out, dt_used] = run_dna_motor_simulation(sim_params, fixed_params)
     % 该函数在 parfor 循环的每个 worker 上独立运行
     % 返回值 dt_used: 实际使用的时间步长，用于质量检测
@@ -872,7 +862,7 @@ function [time_out, fam_out, tye_out, cy5_out, dt_used] = run_dna_motor_simulati
     if isnan(dt) || isinf(dt) || dt == 0
         dt = 1e-4; % 备用安全值，如果上面修改了这里也需要进行修改比如1e-2
     end
-    
+
     % 记录使用的 dt（用于返回）
     dt_used = dt;
     % --- [防护代码结束] ---
@@ -986,5 +976,3 @@ function [time_out, fam_out, tye_out, cy5_out, dt_used] = run_dna_motor_simulati
     tye_out = result_signal(:, 3);
     cy5_out = result_signal(:, 4);
 end % 结束 run_dna_motor_simulation 函数
-disp('模拟完成');
-exit;
