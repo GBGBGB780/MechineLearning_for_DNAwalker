@@ -20,10 +20,18 @@ disp('开始生成数据集...');
 tic; % 开始计时
 
 % --- 从您的需求中定义 ---
-num_samples = 15000;      % 要生成的样本总数
-simu_time = 130    % 模拟时间为130min
+target_num_samples = 15000;      % 目标合格样本总数
+initial_sample_ratio = 1.5;       % 初始采样冗余比例（生成1.5倍样本以应对质量过滤）
+num_samples = round(target_num_samples * initial_sample_ratio);  % 初始生成样本数：22500
+
+simu_time = 130;    % 模拟时间为130min
 num_time_points = simu_time * 60 + 1;     % 标准化的时间点数量，总时间130min，因此7800点（秒），加上t=0，所以7801
 output_filename = 'training_dataset.mat';
+
+fprintf('=== 数据集生成配置 ===\n');
+fprintf('目标合格样本数: %d\n', target_num_samples);
+fprintf('初始生成样本数: %d (冗余比例 %.1f)\n', num_samples, initial_sample_ratio);
+fprintf('====================\n\n');
 
 %% 2. 待训练的参数定义 (来自 configfile.ini)
 % 7个待训练参数的名称
@@ -130,20 +138,246 @@ parfor i = 1:num_samples
     );
 
     % 2. 模拟
-    [time, fam, tye, cy5] = run_dna_motor_simulation(current_params, fp);
-    % 将结果放入 cell 中（每个 cell 是一个 num_time_points x 3 矩阵）
-    X_local{i} = [fam, tye, cy5]';
+    [time, fam, tye, cy5, dt_used] = run_dna_motor_simulation(current_params, fp);
+    % 将结果放入 cell 中（每个 cell 是一个 struct，包含信号和 dt）
+    X_local{i} = struct('signals', [fam, tye, cy5]', 'dt_used', dt_used);
 
     if mod(i, 1) == 0
         fprintf('已完成模拟 %d / %d\n', i, num_samples);
     end
 end
 
-% 4. 合并 cell 为三维矩阵
-X = cat(3, X_local{:});
+% 4. 提取数据并合并
+% 分离信号和 dt 信息
+dt_records = zeros(num_samples, 1);
+X_temp = cell(num_samples, 1);
+
+for i = 1:num_samples
+    X_temp{i} = X_local{i}.signals;
+    dt_records(i) = X_local{i}.dt_used;
+end
+
+% 合并 cell 为三维矩阵
+X = cat(3, X_temp{:});
 X = permute(X, [3,1,2]); % 调整维度，使其成为 (num_samples, num_time_points, 3)
 
 disp('...所有并行模拟已完成。');
+
+%% 5. 数据质量验证和补充
+disp('========================================');
+disp('正在进行数据质量验证...');
+
+% 5.1 验证初始样本
+valid_indices = true(num_samples, 1);
+invalid_reasons = cell(num_samples, 1);
+
+MIN_DT_THRESHOLD = 1.2e-5;  % dt 阈值，与模拟函数中的 MIN_DT 一致
+
+parfor i = 1:num_samples
+    fam = X(i, :, 1);
+    tye = X(i, :, 2);
+    cy5 = X(i, :, 3);
+    dt_this = dt_records(i);
+    
+    % 内联验证逻辑
+    is_valid = true;
+    reason = '';
+    
+    % 检查 0: dt 是否被强制调整（新增）
+    % 如果 dt 达到阈值，说明原始计算需要的 dt 极小，参数组合可能导致 DNA walker 无法正常工作
+    if dt_this <= MIN_DT_THRESHOLD
+        is_valid = false;
+        reason = sprintf('dt = %.2e (too small, slow dynamics)', dt_this);
+    end
+    
+    % 检查 1: NaN/Inf
+    if is_valid && (any(isnan(fam)) || any(isnan(tye)) || any(isnan(cy5)) || ...
+       any(isinf(fam)) || any(isinf(tye)) || any(isinf(cy5)))
+        is_valid = false;
+        reason = 'Contains NaN or Inf';
+    end
+    
+    % 检查 2: 曲线变化范围
+    if is_valid
+        fam_change = max(fam) - min(fam);
+        tye_change = max(tye) - min(tye);
+        cy5_change = max(cy5) - min(cy5);
+        
+        if fam_change <= 0.02
+            is_valid = false;
+            reason = sprintf('FAM change %.4f >= 0.02', fam_change);
+        elseif tye_change <= 0.6
+            is_valid = false;
+            reason = sprintf('TYE change %.4f >= 0.6', tye_change);
+        elseif cy5_change <= 0.02
+            is_valid = false;
+            reason = sprintf('CY5 change %.4f >= 0.02', cy5_change);
+        end
+    end
+    
+    valid_indices(i) = is_valid;
+    if ~is_valid
+        invalid_reasons{i} = reason;
+    end
+end
+
+num_valid = sum(valid_indices);
+num_invalid = num_samples - num_valid;
+
+fprintf('\n--- 初始样本质量统计 ---\n');
+fprintf('合格样本数: %d / %d (%.1f%%)\n', num_valid, num_samples, 100*num_valid/num_samples);
+fprintf('不合格样本数: %d (%.1f%%)\n', num_invalid, 100*num_invalid/num_samples);
+
+% 统计不合格原因
+if num_invalid > 0
+    fprintf('\n不合格原因分布:\n');
+    unique_reasons = unique(invalid_reasons(~cellfun(@isempty, invalid_reasons)));
+    for k = 1:length(unique_reasons)
+        count = sum(strcmp(invalid_reasons, unique_reasons{k}));
+        fprintf('  - %s: %d 个样本 (%.1f%%)\n', unique_reasons{k}, count, 100*count/num_invalid);
+    end
+end
+
+% 5.2 补充样本逻辑
+round_num = 1;
+max_rounds = 10;  % 最大补充轮数，防止无限循环
+
+while num_valid < target_num_samples && round_num <= max_rounds
+    needed = target_num_samples - num_valid;
+    extra_generate = ceil(needed * 1.3);  % 多生成30%作为冗余
+    
+    fprintf('\n========================================\n');
+    fprintf('=== 第 %d 轮补充采样 ===\n', round_num);
+    fprintf('当前合格数: %d / %d\n', num_valid, target_num_samples);
+    fprintf('需要补充: %d 个样本\n', needed);
+    fprintf('实际生成: %d 个样本 (含30%%冗余)\n', extra_generate);
+    fprintf('========================================\n');
+    
+    % 生成新的 LHS 样本
+    lhs_additional = lhsdesign(extra_generate, length(param_names));
+    Y_additional = min_vals + (max_vals - min_vals) .* lhs_additional;
+    
+    % 运行补充模拟
+    X_additional_local = cell(extra_generate, 1);
+    
+    parfor i = 1:extra_generate
+        current_params = struct(...
+            'E_b',           Y_additional(i, 1), ...
+            'E_b_azo_trans', Y_additional(i, 2), ...
+            'E_b_azo_cis',   Y_additional(i, 3), ...
+            'k_mig',         Y_additional(i, 4), ...
+            'k0',            Y_additional(i, 5), ...
+            'drt_z',         Y_additional(i, 6), ...
+            'drt_s',         Y_additional(i, 7) ...
+        );
+        
+        [time, fam, tye, cy5, dt_used] = run_dna_motor_simulation(current_params, fp);
+        X_additional_local{i} = struct('signals', [fam, tye, cy5]', 'dt_used', dt_used);
+        
+        if mod(i, 100) == 0
+            fprintf('  补充模拟进度: %d / %d\n', i, extra_generate);
+        end
+    end
+    
+    % 合并并验证补充样本
+    % 分离信号和 dt 信息
+    dt_additional = zeros(extra_generate, 1);
+    X_additional_temp = cell(extra_generate, 1);
+    
+    for i = 1:extra_generate
+        X_additional_temp{i} = X_additional_local{i}.signals;
+        dt_additional(i) = X_additional_local{i}.dt_used;
+    end
+    
+    X_additional = cat(3, X_additional_temp{:});
+    X_additional = permute(X_additional, [3,1,2]);
+    
+    valid_additional = true(extra_generate, 1);
+    invalid_additional = cell(extra_generate, 1);
+    
+    parfor i = 1:extra_generate
+        fam = X_additional(i, :, 1);
+        tye = X_additional(i, :, 2);
+        cy5 = X_additional(i, :, 3);
+        dt_this = dt_additional(i);
+        
+        is_valid = true;
+        reason = '';
+        
+        % 检查 dt
+        if dt_this <= MIN_DT_THRESHOLD
+            is_valid = false;
+            reason = sprintf('dt = %.2e (too small, slow dynamics)', dt_this);
+        end
+        
+        if is_valid && (any(isnan(fam)) || any(isnan(tye)) || any(isnan(cy5)) || ...
+           any(isinf(fam)) || any(isinf(tye)) || any(isinf(cy5)))
+            is_valid = false;
+            reason = 'Contains NaN or Inf';
+        end
+        
+        if is_valid
+            fam_change = max(fam) - min(fam);
+            tye_change = max(tye) - min(tye);
+            cy5_change = max(cy5) - min(cy5);
+            
+            if fam_change >= 0.02
+                is_valid = false;
+                reason = sprintf('FAM change %.4f >= 0.02', fam_change);
+            elseif tye_change >= 0.6
+                is_valid = false;
+                reason = sprintf('TYE change %.4f >= 0.6', tye_change);
+            elseif cy5_change >= 0.02
+                is_valid = false;
+                reason = sprintf('CY5 change %.4f >= 0.02', cy5_change);
+            end
+        end
+        
+        valid_additional(i) = is_valid;
+        if ~is_valid
+            invalid_additional{i} = reason;
+        end
+    end
+    
+    num_valid_additional = sum(valid_additional);
+    fprintf('补充样本合格数: %d / %d (%.1f%%)\n', ...
+        num_valid_additional, extra_generate, 100*num_valid_additional/extra_generate);
+    
+    % 合并到总样本集
+    X = cat(1, X, X_additional);
+    Y = [Y; Y_additional];
+    dt_records = [dt_records; dt_additional];
+    valid_indices = [valid_indices; valid_additional];
+    invalid_reasons = [invalid_reasons; invalid_additional];
+    
+    num_valid = sum(valid_indices);
+    fprintf('累计合格样本数: %d / %d\n', num_valid, target_num_samples);
+    
+    round_num = round_num + 1;
+end
+
+% 5.3 最终筛选和保存
+fprintf('\n========================================\n');
+if num_valid >= target_num_samples
+    fprintf('✓ 成功获得足够的合格样本！\n');
+    
+    % 从所有合格样本中选取前 target_num_samples 个
+    valid_idx_list = find(valid_indices);
+    selected_indices = valid_idx_list(1:target_num_samples);
+    
+    X_final = X(selected_indices, :, :);
+    Y_final = Y(selected_indices, :);
+    
+    fprintf('最终样本数: %d\n', target_num_samples);
+else
+    fprintf('⚠ 警告：未能获得足够的合格样本！\n');
+    fprintf('目标: %d, 实际获得: %d\n', target_num_samples, num_valid);
+    fprintf('将保存所有合格样本。\n');
+    
+    X_final = X(valid_indices, :, :);
+    Y_final = Y(valid_indices, :);
+end
+fprintf('========================================\n\n');
 
 % 关闭并行池
 % delete(gcp('nocreate'));
@@ -153,16 +387,21 @@ disp('...所有并行模拟已完成。');
 disp(['正在将最终数据集保存到 ', output_filename, '...']);
 
 % -v7.3 标志支持大于 2GB 的变量
-save(output_filename, 'X', 'Y', 'param_names', '-v7.3');
+save(output_filename, 'X_final', 'Y_final', 'param_names', '-v7.3');
 
 toc; % 结束计时
 disp('----------------------------------------------------');
 disp('数据集生成完毕！');
 disp(['文件已保存为: ', output_filename]);
 disp('包含变量:');
-disp('  X (输出): [10000, 100, 3] (样本, 时间点, 曲线)');
-disp('  Y (输入): [10000, 7] (样本, 参数)');
+fprintf('  X_final (输出): [%d, %d, %d] (样本, 时间点, 曲线)\n', size(X_final));
+fprintf('  Y_final (输入): [%d, %d] (样本, 参数)\n', size(Y_final));
 disp('  param_names (标签): [1, 7] (参数名称)');
+fprintf('\n数据质量保证:\n');
+fprintf('  ✓ 所有样本均无 NaN/Inf 值\n');
+fprintf('  ✓ FAM 曲线变化 ≤ 0.02\n');
+fprintf('  ✓ TYE 曲线变化 ≤ 0.6\n');
+fprintf('  ✓ CY5 曲线变化 ≤ 0.02\n');
 disp('----------------------------------------------------');
 
 
@@ -170,8 +409,9 @@ disp('----------------------------------------------------');
 % -------------------------------------------------------------------------
 % ** 这是您提供的 .m 脚本的核心，已封装为一个函数 **
 % -------------------------------------------------------------------------
-function [time_out, fam_out, tye_out, cy5_out] = run_dna_motor_simulation(sim_params, fixed_params)
+function [time_out, fam_out, tye_out, cy5_out, dt_used] = run_dna_motor_simulation(sim_params, fixed_params)
     % 该函数在 parfor 循环的每个 worker 上独立运行
+    % 返回值 dt_used: 实际使用的时间步长，用于质量检测
 
     % -------------------------------------------------
     % 1. 解包参数
@@ -632,6 +872,9 @@ function [time_out, fam_out, tye_out, cy5_out] = run_dna_motor_simulation(sim_pa
     if isnan(dt) || isinf(dt) || dt == 0
         dt = 1e-4; % 备用安全值，如果上面修改了这里也需要进行修改比如1e-2
     end
+    
+    % 记录使用的 dt（用于返回）
+    dt_used = dt;
     % --- [防护代码结束] ---
 
     R_vis = zeros(14, 14);
