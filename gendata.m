@@ -164,6 +164,9 @@ end
 X = cat(3, X_temp{:});
 X = permute(X, [3,1,2]); % 调整维度，使其成为 (num_samples, 3, num_time_points)
 
+% 立即释放内存
+clear X_local X_temp;
+
 disp('...所有并行模拟已完成。');
 
 %% 5. 数据质量验证和补充
@@ -280,6 +283,9 @@ while num_valid < target_num_samples && round_num <= max_rounds
 
     X_additional = cat(3, X_additional_temp{:});
     X_additional = permute(X_additional, [3,1,2]);
+    
+    % 立即释放内存
+    clear X_additional_local X_additional_temp;
 
     valid_additional = true(extra_generate, 1);
     invalid_additional = cell(extra_generate, 1);
