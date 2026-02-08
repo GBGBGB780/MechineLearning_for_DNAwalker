@@ -20,7 +20,7 @@ disp('开始生成数据集...');
 tic; % 开始计时
 
 % --- 从您的需求中定义 ---
-target_num_samples = 15;      % 目标合格样本总数
+target_num_samples = 15000;      % 目标合格样本总数
 initial_sample_ratio = 1.5;       % 初始采样冗余比例（生成1.5倍样本以应对质量过滤）
 num_samples = round(target_num_samples * initial_sample_ratio);  % 初始生成样本数：22500
 
@@ -33,7 +33,7 @@ fprintf('目标合格样本数: %d\n', target_num_samples);
 fprintf('初始生成样本数: %d (冗余比例 %.1f)\n', num_samples, initial_sample_ratio);
 fprintf('====================\n\n');
 
-%% 2. 待训练的参数定义 (来自 configfile.ini)
+%% 2. 待训练的参数定义 (来自 configfile.ini) 
 % 7个待训练参数的名称
 param_names = {
     'E_b',
@@ -115,15 +115,20 @@ disp('并行池已启动。');
 
 disp(['正在并行运行 ', num2str(num_samples), ' 次模拟...']);
 
-% X: (10000, 100, 3) 输出曲线矩阵
-% (样本, 时间点, 曲线索引)
+% X: (10000, 3, 100) 输出曲线矩阵
+% (样本, 曲线索引, 时间点)
 % 索引 1: FAM, 2: TYE, 3: CY5
-X = zeros(num_samples, num_time_points, 3);
+X = zeros(num_samples, 3, num_time_points);
 
 % 为了在 parfor 中高效传递，创建 fixed_params 的副本
 fp = fixed_params;
 
 X_local = cell(num_samples, 1);
+
+% Setup progress tracking
+D = parallel.pool.DataQueue;
+afterEach(D, @(~) updateProgress(num_samples, false));
+updateProgress(num_samples, true); % Initialize
 
 parfor i = 1:num_samples
     % 1. 准备参数
@@ -142,9 +147,7 @@ parfor i = 1:num_samples
     % 将结果放入 cell 中（每个 cell 是一个 struct，包含信号和 dt）
     X_local{i} = struct('signals', [fam, tye, cy5]', 'dt_used', dt_used);
 
-    if mod(i, 1) == 0
-        fprintf('已完成模拟 %d / %d\n', i, num_samples);
-    end
+    send(D, []);
 end
 
 % 4. 提取数据并合并
@@ -159,7 +162,7 @@ end
 
 % 合并 cell 为三维矩阵
 X = cat(3, X_temp{:});
-X = permute(X, [3,1,2]); % 调整维度，使其成为 (num_samples, num_time_points, 3)
+X = permute(X, [3,1,2]); % 调整维度，使其成为 (num_samples, 3, num_time_points)
 
 disp('...所有并行模拟已完成。');
 
@@ -191,8 +194,10 @@ for b_start = 1:batch_size:num_samples
     % 并行处理当前批次
     parfor k = 1:current_count
         % 调用验证函数
+        % 调用验证函数
+        % [修正] 正确切片: (k, 通道, :) -> squeeze 得到 (时间点, 1)
         [valid_batch(k), reasons_batch{k}] = validate_single_sample(...
-            X_batch(k, :, 1), X_batch(k, :, 2), X_batch(k, :, 3), ...
+            squeeze(X_batch(k, 1, :)), squeeze(X_batch(k, 2, :)), squeeze(X_batch(k, 3, :)), ...
             dt_batch(k), MIN_DT_THRESHOLD);
     end
     
@@ -241,6 +246,11 @@ while num_valid < target_num_samples && round_num <= max_rounds
     % 运行补充模拟
     X_additional_local = cell(extra_generate, 1);
 
+    % Setup supplemental progress tracking
+    D_supp = parallel.pool.DataQueue;
+    afterEach(D_supp, @(~) updateProgress(extra_generate, false));
+    updateProgress(extra_generate, true); % Initialize
+    
     parfor i = 1:extra_generate
         current_params = struct(...
             'E_b',           Y_additional(i, 1), ...
@@ -255,9 +265,7 @@ while num_valid < target_num_samples && round_num <= max_rounds
         [time, fam, tye, cy5, dt_used] = run_dna_motor_simulation(current_params, fp);
         X_additional_local{i} = struct('signals', [fam, tye, cy5]', 'dt_used', dt_used);
 
-        if mod(i, 100) == 0
-            fprintf('  补充模拟进度: %d / %d\n', i, extra_generate);
-        end
+        send(D_supp, []);
     end
 
     % 合并并验证补充样本
@@ -277,9 +285,9 @@ while num_valid < target_num_samples && round_num <= max_rounds
     invalid_additional = cell(extra_generate, 1);
 
     parfor i = 1:extra_generate
-        fam = X_additional(i, :, 1);
-        tye = X_additional(i, :, 2);
-        cy5 = X_additional(i, :, 3);
+        fam = squeeze(X_additional(i, 1, :));
+        tye = squeeze(X_additional(i, 2, :));
+        cy5 = squeeze(X_additional(i, 3, :));
         dt_this = dt_additional(i);
 
         % --- 使用封装的验证函数 ---
@@ -342,7 +350,7 @@ disp('----------------------------------------------------');
 disp('数据集生成完毕！');
 disp(['文件已保存为: ', output_filename]);
 disp('包含变量:');
-fprintf('  X_final (输出): [%d, %d, %d] (样本, 时间点, 曲线)\n', size(X_final));
+fprintf('  X_final (输出): [%d, %d, %d] (样本, 曲线, 时间点)\n', size(X_final));
 fprintf('  Y_final (输入): [%d, %d] (样本, 参数)\n', size(Y_final));
 disp('  param_names (标签): [1, 7] (参数名称)');
 fprintf('\n数据质量保证:\n');
@@ -906,7 +914,7 @@ function [time_out, fam_out, tye_out, cy5_out, dt_used] = run_dna_motor_simulati
     %                               dynamics
 
     % 预分配结果矩阵以提高效率
-    simu_time = 130
+    simu_time = 130;
     save_interval_min = 1/60;
     num_results = simu_time / save_interval_min + 1;
     result_signal = zeros(num_results, 4);
@@ -976,3 +984,24 @@ function [time_out, fam_out, tye_out, cy5_out, dt_used] = run_dna_motor_simulati
     tye_out = result_signal(:, 3);
     cy5_out = result_signal(:, 4);
 end % 结束 run_dna_motor_simulation 函数
+
+%% 9. 进度条更新函数 (本地函数)
+function updateProgress(total_samples, is_init)
+    persistent p
+    
+    if nargin > 1 && is_init
+        p = 0;
+        fprintf('进度: 0.0%%\n');
+        return;
+    end
+    
+    if isempty(p)
+        p = 0;
+    end
+    p = p + 1;
+    
+    % 每 1% 更新一次
+    if mod(p, ceil(total_samples/100)) == 0 || p == total_samples
+        fprintf('进度: %.1f%%\n', p/total_samples*100);
+    end
+end
