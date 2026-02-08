@@ -1,3 +1,4 @@
+# coding=utf-8
 import numpy as np
 import sys
 import os
@@ -11,11 +12,12 @@ def load_mat_v73(mat_file_path):
     try:
         with h5py.File(mat_file_path, 'r') as f:
             for key in f.keys():
-                if key in ['X', 'Y', 'parameter_names']:
+                # 修复: 查找 X_final, Y_final, param_names (gendata.m 保存的变量名)
+                if key in ['X_final', 'Y_final', 'param_names']:
                     dset = f[key]
                     arr = dset[:]
 
-                    if key == 'parameter_names':
+                    if key == 'param_names':
                         try:
                             names = []
                             for ref in np.ravel(arr):
@@ -30,10 +32,11 @@ def load_mat_v73(mat_file_path):
                             print(f"Warning: Failed to parse parameter_names ({e}), saving raw data.")
                             data[key] = arr.T if arr.ndim > 1 else arr
                     else:
+                        # 确保是纯 numpy 数组，复制数据以断开与 h5py 的连接
                         if arr.ndim >= 2:
-                            data[key] = arr.T
+                            data[key] = np.array(arr.T, dtype=np.float64)
                         else:
-                            data[key] = arr
+                            data[key] = np.array(arr, dtype=np.float64)
 
     except Exception as e:
         print(f"Error: Failed to load .mat file with h5py. Error: {e}")
@@ -58,16 +61,18 @@ def convert_mat_to_npz(mat_file_path):
     if mat_data is None:
         return
 
-    required_vars = ['X', 'Y']
+    # 修复: 查找 X_final 和 Y_final (gendata.m 保存的变量名)
+    required_vars = ['X_final', 'Y_final']
     for var_name in required_vars:
         if var_name not in mat_data:
             print(f"Error: Required variable '{var_name}' missing in .mat file.")
             print(f"Variables in file: {list(mat_data.keys())}")
             return
 
-    X_data = mat_data['X']
-    Y_data = mat_data['Y']
-    param_names = mat_data.get('parameter_names', None)
+    # 修复: 使用正确的变量名获取数据
+    X_data = mat_data['X_final']
+    Y_data = mat_data['Y_final']
+    param_names = mat_data.get('param_names', None)
 
     base_name = os.path.splitext(mat_file_path)[0]
     npz_file_path = base_name + ".npz"
