@@ -21,8 +21,8 @@ tic; % 开始计时
 
 % --- 从您的需求中定义 ---
 target_num_samples = 15000;      % 目标合格样本总数
-initial_sample_ratio = 1.5;       % 初始采样冗余比例（生成1.5倍样本以应对质量过滤）
-num_samples = round(target_num_samples * initial_sample_ratio);  % 初始生成样本数：22500
+initial_sample_ratio = 2.0;       % 初始采样冗余比例（生成2倍样本以应对质量过滤）
+num_samples = round(target_num_samples * initial_sample_ratio);  % 初始生成样本数
 
 simu_time = 130;    % 模拟时间为130min
 num_time_points = simu_time * 60 + 1;     % 标准化的时间点数量，总时间130min，因此7800点（秒），加上t=0，所以7801
@@ -274,13 +274,13 @@ max_rounds = 10;  % 最大补充轮数，防止无限循环
 
 while num_valid < target_num_samples && round_num <= max_rounds
     needed = target_num_samples - num_valid;
-    extra_generate = ceil(needed * 1.3);  % 多生成30%作为冗余
+    extra_generate = ceil(needed * 1.6);  % 多生成60%作为冗余
 
     fprintf('\n========================================\n');
     fprintf('=== 第 %d 轮补充采样 ===\n', round_num);
     fprintf('当前合格数: %d / %d\n', num_valid, target_num_samples);
     fprintf('需要补充: %d 个样本\n', needed);
-    fprintf('实际生成: %d 个样本 (含30%%冗余)\n', extra_generate);
+    fprintf('实际生成: %d 个样本 (含60%%冗余)\n', extra_generate);
     fprintf('========================================\n');
 
     % 生成新的 LHS 样本 (策略 1: 增量式 LHS / 分层排除法)
