@@ -270,7 +270,7 @@ num_valid = total_saved;
 
 % 5.3 补充样本逻辑
 round_num = 1;
-max_rounds = 10;  % 最大补充轮数，防止无限循环
+max_rounds = 500;  % 最大补充轮数，防止无限循环，设置一个比较大的数保证足够合格数据
 
 while num_valid < target_num_samples && round_num <= max_rounds
     needed = target_num_samples - num_valid;
