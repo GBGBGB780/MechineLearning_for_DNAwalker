@@ -284,13 +284,13 @@ max_rounds = 500;  % 最大补充轮数，防止无限循环，设置一个比�
 
 while num_valid < target_num_samples && round_num <= max_rounds
     needed = target_num_samples - num_valid;
-    extra_generate = ceil(needed * 1.6);  % 多生成60%作为冗余
+    extra_generate = ceil(needed * 2.5);  % 生成250%作为冗余
 
     fprintf('\n========================================\n');
     fprintf('=== 第 %d 轮补充采样 ===\n', round_num);
     fprintf('当前合格数: %d / %d\n', num_valid, target_num_samples);
     fprintf('需要补充: %d 个样本\n', needed);
-    fprintf('实际生成: %d 个样本 (含60%%冗余)\n', extra_generate);
+    fprintf('实际生成: %d 个样本 (含250%%冗余)\n', extra_generate);
     fprintf('========================================\n');
 
     % 生成新的 LHS 样本 (策略 1: 增量式 LHS / 分层排除法)
