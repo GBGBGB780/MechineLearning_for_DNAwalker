@@ -178,6 +178,10 @@ disp('正在进行数据质量验证...');
 
 % 5.1 验证初始样本 (分批处理以节省内存)
 % 5.1 验证初始样本 (使用统一函数)
+MIN_DT_THRESHOLD = 1.2e-5;  % dt 阈值，与模拟函数中的 MIN_DT 一致
+batch_size = 5000;          % 为了防止内存溢出，分批进行检测
+fprintf('开始分批质量检测 (批大小: %d)...\n', batch_size);
+
 [valid_indices, invalid_reasons, num_valid] = validate_and_report_stats(...
     X, dt_records, batch_size, MIN_DT_THRESHOLD, '初始样本');
 
