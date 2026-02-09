@@ -437,8 +437,16 @@ disp('----------------------------------------------------');
 disp('数据集生成完毕！');
 disp(['文件已保存为: ', output_filename]);
 disp('包含变量:');
-fprintf('  X_final (输出): [%d, %d, %d] (样本, 曲线, 时间点)\n', size(X_final));
-fprintf('  Y_final (输入): [%d, %d] (样本, 参数)\n', size(Y_final));
+try 
+    % 此处 X_final 和 Y_final 仅存在于 matfile 对象 m 中，不能直接作为变量访问
+    % 使用 size(m.X_final) 获取文件内变量的大小
+    x_sz = size(m.X_final);
+    y_sz = size(m.Y_final);
+    fprintf('  X_final (输出): [%d, %d, %d] (样本, 曲线, 时间点)\n', x_sz);
+    fprintf('  Y_final (输入): [%d, %d] (样本, 参数)\n', y_sz);
+catch
+    fprintf('  (无法读取 X_final/Y_final 大小，可能未生成任何合格样本)\n');
+end
 disp('  param_names (标签): [1, 7] (参数名称)');
 fprintf('\n数据质量保证:\n');
 fprintf('  ✓ 所有样本均无 NaN/Inf 值\n');
