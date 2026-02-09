@@ -27,6 +27,9 @@ num_samples = round(target_num_samples * initial_sample_ratio);  % 初始生成�
 simu_time = 130;    % 模拟时间为130min
 num_time_points = simu_time * 60 + 1;     % 标准化的时间点数量，总时间130min，因此7800点（秒），加上t=0，所以7801
 output_filename = 'training_dataset.mat';
+if exist(output_filename, 'file')
+    delete(output_filename); % 删除旧文件，确保从头开始
+end
 
 fprintf('=== 数据集生成配置 ===\n');
 fprintf('目标合格样本数: %d\n', target_num_samples);
@@ -227,7 +230,45 @@ if num_invalid > 0
     end
 end
 
-% 5.2 补充样本逻辑
+% 5.2 立即保存合格样本并释放内存
+fprintf('正在将合格样本写入文件以释放内存...\n');
+
+% 1. 初始化 matfile (如果尚未存在)
+if ~exist(output_filename, 'file')
+    save(output_filename, 'param_names', '-v7.3'); % 先保存 param_names
+end
+m = matfile(output_filename, 'Writable', true);
+
+% 检查当前文件里已经存了多少 (如果重新运行可能需要追加，或者这里每次都覆盖? 
+% 假设每次从头运行，这里初始化计数)
+% 为了安全，我们在开头 delete 了文件或者 clear 了，这里假设从 0 开始
+total_saved = 0; % 记录已保存到磁盘的合格样本数
+
+if num_valid > 0
+    X_valid = X(valid_indices, :, :);
+    Y_valid = Y(valid_indices, :);
+    
+    [n_new, ~, ~] = size(X_valid);
+    
+    % 写入 matfile (X_final, Y_final)
+    % 注意: matfile 支持部分写入
+    m.X_final(1:n_new, :, :) = X_valid;
+    m.Y_final(1:n_new, :) = Y_valid;
+    
+    total_saved = n_new;
+    fprintf('已保存初始批次 %d 个合格样本。\n', n_new);
+end
+
+% 记录目前为止生成的样本总数(含无效)，用于增量LHS
+total_generated_count = num_samples;
+
+% 彻底清理内存中的大数组
+clear X Y dt_records valid_indices invalid_reasons X_valid Y_valid;
+
+% 更新 num_valid 为已保存的数量
+num_valid = total_saved;
+
+% 5.3 补充样本逻辑
 round_num = 1;
 max_rounds = 10;  % 最大补充轮数，防止无限循环
 
@@ -242,8 +283,21 @@ while num_valid < target_num_samples && round_num <= max_rounds
     fprintf('实际生成: %d 个样本 (含30%%冗余)\n', extra_generate);
     fprintf('========================================\n');
 
-    % 生成新的 LHS 样本
-    lhs_additional = lhsdesign(extra_generate, length(param_names));
+    % 生成新的 LHS 样本 (策略 1: 增量式 LHS / 分层排除法)
+    % 原理: 生成 (Total_Old + New) 个样本，取最后 New 个，以保持整体 LHS 空间特性
+    current_total_needed = total_generated_count + extra_generate;
+    
+    disp(['正在生成增量 LHS 样本 (', num2str(total_generated_count), ' -> ', num2str(current_total_needed), ')...']);
+    
+    % 生成更大的 LHS 样本集
+    lhs_full = lhsdesign(current_total_needed, length(param_names));
+    
+    % 截取新增的部分
+    lhs_additional = lhs_full(total_generated_count + 1 : end, :);
+    
+    % 更新总生成计数
+    total_generated_count = current_total_needed;
+    
     Y_additional = min_vals + (max_vals - min_vals) .* lhs_additional;
 
     % 运行补充模拟
@@ -305,14 +359,25 @@ while num_valid < target_num_samples && round_num <= max_rounds
     fprintf('补充样本合格数: %d / %d (%.1f%%)\n', ...
         num_valid_additional, extra_generate, 100*num_valid_additional/extra_generate);
 
-    % 合并到总样本集
-    X = cat(1, X, X_additional);
-    Y = [Y; Y_additional];
-    dt_records = [dt_records; dt_additional];
-    valid_indices = [valid_indices; valid_additional];
-    invalid_reasons = [invalid_reasons; invalid_additional];
+    % 仅合并合格的补充样本
+    if num_valid_additional > 0
+        X_additional_valid = X_additional(valid_additional, :, :);
+        Y_additional_valid = Y_additional(valid_additional, :);
+        
+        % 写入 matfile
+        start_idx = total_saved + 1;
+        end_idx = total_saved + num_valid_additional;
+        
+        m.X_final(start_idx:end_idx, :, :) = X_additional_valid;
+        m.Y_final(start_idx:end_idx, :) = Y_additional_valid;
+        
+        total_saved = total_saved + num_valid_additional;
+        num_valid = total_saved;
+    end
+    
+    % 清理临时变量
+    clear X_additional Y_additional dt_additional valid_additional invalid_additional X_additional_valid Y_additional_valid lhs_full lhs_additional;
 
-    num_valid = sum(valid_indices);
     fprintf('累计合格样本数: %d / %d\n', num_valid, target_num_samples);
 
     round_num = round_num + 1;
@@ -322,22 +387,17 @@ end
 fprintf('\n========================================\n');
 if num_valid >= target_num_samples
     fprintf('✓ 成功获得足够的合格样本！\n');
-
-    % 从所有合格样本中选取前 target_num_samples 个
-    valid_idx_list = find(valid_indices);
-    selected_indices = valid_idx_list(1:target_num_samples);
-
-    X_final = X(selected_indices, :, :);
-    Y_final = Y(selected_indices, :);
-
-    fprintf('最终样本数: %d\n', target_num_samples);
+    fprintf('最终样本数: %d (文件中已保存)\n', num_valid);
+    
+    % 如果需要精确等于 target_num_samples，可以在这里截断文件
+    % 但 matfile 不支持 shrink，通常多一点没关系，或者在此处提示
+    if num_valid > target_num_samples
+        fprintf('提示: 实际样本数 (%d) 略多于目标数 (%d)，这通常是可以接受的。\n', num_valid, target_num_samples);
+    end
 else
     fprintf('⚠ 警告：未能获得足够的合格样本！\n');
     fprintf('目标: %d, 实际获得: %d\n', target_num_samples, num_valid);
-    fprintf('将保存所有合格样本。\n');
-
-    X_final = X(valid_indices, :, :);
-    Y_final = Y(valid_indices, :);
+    fprintf('已保存所有合格样本。\n');
 end
 fprintf('========================================\n\n');
 
@@ -345,11 +405,13 @@ fprintf('========================================\n\n');
 % delete(gcp('nocreate'));
 % disp('并行池已关闭。');
 
-%% 6. 保存数据
-disp(['正在将最终数据集保存到 ', output_filename, '...']);
-
-% -v7.3 标志支持大于 2GB 的变量
-save(output_filename, 'X_final', 'Y_final', 'param_names', '-v7.3');
+%% 6. 结束
+toc; % 结束计时
+disp('----------------------------------------------------');
+disp('数据集生成完毕！');
+disp(['文件已保存为: ', output_filename]);
+disp('包含变量: X_final, Y_final, param_names');
+disp('注意: 数据已使用 matfile 增量写入，无需再次 save。');
 
 toc; % 结束计时
 disp('----------------------------------------------------');
