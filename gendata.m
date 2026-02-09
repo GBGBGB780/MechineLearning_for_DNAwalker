@@ -381,7 +381,7 @@ function [is_valid, reason] = validate_single_sample(fam, tye, cy5, dt_this, min
     % 检查 0: dt 是否被强制调整
     if dt_this <= min_dt_threshold
         is_valid = false;
-        reason = sprintf('dt = %.2e (too small, slow dynamics)', dt_this);
+        reason = 'dt too small (slow dynamics)';
     end
 
     % 检查 1: NaN/Inf
@@ -400,13 +400,13 @@ function [is_valid, reason] = validate_single_sample(fam, tye, cy5, dt_this, min
         % 使用 <= 判断是否"变化过小" (根据用户要求)
         if fam_change <= 0.02
             is_valid = false;
-            reason = sprintf('FAM change %.4f <= 0.02', fam_change);
+            reason = 'FAM change <= 0.02';
         elseif tye_change <= 0.6
             is_valid = false;
-            reason = sprintf('TYE change %.4f <= 0.6', tye_change);
+            reason = 'TYE change <= 0.6';
         elseif cy5_change <= 0.02
             is_valid = false;
-            reason = sprintf('CY5 change %.4f <= 0.02', cy5_change);
+            reason = 'CY5 change <= 0.02';
         end
     end
 end
