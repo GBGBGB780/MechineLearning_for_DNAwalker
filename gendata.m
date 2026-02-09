@@ -177,58 +177,11 @@ disp('========================================');
 disp('正在进行数据质量验证...');
 
 % 5.1 验证初始样本 (分批处理以节省内存)
-valid_indices = true(num_samples, 1);
-invalid_reasons = cell(num_samples, 1);
+% 5.1 验证初始样本 (使用统一函数)
+[valid_indices, invalid_reasons, num_valid] = validate_and_report_stats(...
+    X, dt_records, batch_size, MIN_DT_THRESHOLD, '初始样本');
 
-MIN_DT_THRESHOLD = 1.2e-5;  % dt 阈值，与模拟函数中的 MIN_DT 一致
-
-batch_size = 5000; % 为了防止内存溢出，分批进行检测
-fprintf('开始分批质量检测 (批大小: %d)...\n', batch_size);
-
-for b_start = 1:batch_size:num_samples
-    b_end = min(b_start + batch_size - 1, num_samples);
-    current_idx = b_start:b_end;
-    current_count = length(current_idx);
-    
-    % 提取当前批次数据 (避免一次性 broadcasting 整个 X)
-    X_batch = X(current_idx, :, :);
-    dt_batch = dt_records(current_idx);
-    
-    valid_batch = true(current_count, 1);
-    reasons_batch = cell(current_count, 1);
-    
-    % 并行处理当前批次
-    parfor k = 1:current_count
-        % 调用验证函数
-        % 调用验证函数
-        % [修正] 正确切片: (k, 通道, :) -> squeeze 得到 (时间点, 1)
-        [valid_batch(k), reasons_batch{k}] = validate_single_sample(...
-            squeeze(X_batch(k, 1, :)), squeeze(X_batch(k, 2, :)), squeeze(X_batch(k, 3, :)), ...
-            dt_batch(k), MIN_DT_THRESHOLD);
-    end
-    
-    valid_indices(current_idx) = valid_batch;
-    invalid_reasons(current_idx) = reasons_batch;
-    
-    fprintf('  批次 %d-%d 完成检测。\n', b_start, b_end);
-end
-
-num_valid = sum(valid_indices);
 num_invalid = num_samples - num_valid;
-
-fprintf('\n--- 初始样本质量统计 ---\n');
-fprintf('合格样本数: %d / %d (%.1f%%)\n', num_valid, num_samples, 100*num_valid/num_samples);
-fprintf('不合格样本数: %d (%.1f%%)\n', num_invalid, 100*num_invalid/num_samples);
-
-% 统计不合格原因
-if num_invalid > 0
-    fprintf('\n不合格原因分布:\n');
-    unique_reasons = unique(invalid_reasons(~cellfun(@isempty, invalid_reasons)));
-    for k = 1:length(unique_reasons)
-        count = sum(strcmp(invalid_reasons, unique_reasons{k}));
-        fprintf('  - %s: %d 个样本 (%.1f%%)\n', unique_reasons{k}, count, 100*count/num_invalid);
-    end
-end
 
 % 5.2 立即保存合格样本并释放内存
 fprintf('正在将合格样本写入文件以释放内存...\n');
@@ -351,23 +304,9 @@ while num_valid < target_num_samples && round_num <= max_rounds
     % 立即释放内存
     clear X_additional_local X_additional_temp;
 
-    valid_additional = true(extra_generate, 1);
-    invalid_additional = cell(extra_generate, 1);
-
-    parfor i = 1:extra_generate
-        fam = squeeze(X_additional(i, 1, :));
-        tye = squeeze(X_additional(i, 2, :));
-        cy5 = squeeze(X_additional(i, 3, :));
-        dt_this = dt_additional(i);
-
-        % --- 使用封装的验证函数 ---
-        [valid_additional(i), invalid_additional{i}] = validate_single_sample(...
-            fam, tye, cy5, dt_this, MIN_DT_THRESHOLD);
-    end
-
-    num_valid_additional = sum(valid_additional);
-    fprintf('补充样本合格数: %d / %d (%.1f%%)\n', ...
-        num_valid_additional, extra_generate, 100*num_valid_additional/extra_generate);
+    % 3. 验证补充样本 (使用统一函数)
+    [valid_additional, invalid_additional, num_valid_additional] = validate_and_report_stats(...
+        X_additional, dt_additional, batch_size, MIN_DT_THRESHOLD, sprintf('补充样本(第%d轮)', round_num));
 
     % 仅合并合格的补充样本
     if num_valid_additional > 0
@@ -458,7 +397,69 @@ disp('模拟完成, 即将退出。');
 exit;
 
 
-%% 8. 单样本验证函数 (本地函数)
+
+%% 8. 批量验证函数 (本地函数)
+function [valid_indices, invalid_reasons, num_valid] = validate_and_report_stats(X_data, dt_data, batch_size, min_dt_threshold, label_str)
+    % 通用批量验证与统计函数
+    % 输入:
+    %   X_data: (N, 3, T) 样本数据
+    %   dt_data: (N, 1) dt数据
+    %   batch_size: 批处理大小
+    %   min_dt_threshold: dt阈值
+    %   label_str: 标签字符串 (例如 "初始样本" 或 "补充样本")
+    
+    num_samples = size(X_data, 1);
+    valid_indices = true(num_samples, 1);
+    invalid_reasons = cell(num_samples, 1);
+    
+    fprintf('\n--- %s 质量检测 (总数: %d, 批大小: %d) ---\n', label_str, num_samples, batch_size);
+    
+    for b_start = 1:batch_size:num_samples
+        b_end = min(b_start + batch_size - 1, num_samples);
+        current_idx = b_start:b_end;
+        current_count = length(current_idx);
+        
+        % 提取当前批次数据
+        X_batch = X_data(current_idx, :, :);
+        dt_batch = dt_data(current_idx);
+        
+        valid_batch = true(current_count, 1);
+        reasons_batch = cell(current_count, 1);
+        
+        % 并行处理当前批次
+        parfor k = 1:current_count
+            % 调用验证函数 (squeeze 必要)
+            [valid_batch(k), reasons_batch{k}] = validate_single_sample(...
+                squeeze(X_batch(k, 1, :)), squeeze(X_batch(k, 2, :)), squeeze(X_batch(k, 3, :)), ...
+                dt_batch(k), min_dt_threshold);
+        end
+        
+        valid_indices(current_idx) = valid_batch;
+        invalid_reasons(current_idx) = reasons_batch;
+        
+        % 进度打印 (可选)
+        fprintf('  批次 %d-%d 完成检测。\n', b_start, b_end);
+    end
+    
+    num_valid = sum(valid_indices);
+    num_invalid = num_samples - num_valid;
+    
+    fprintf('%s 统计结果:\n', label_str);
+    fprintf('  合格: %d (%.1f%%)\n', num_valid, 100*num_valid/num_samples);
+    fprintf('  不合格: %d (%.1f%%)\n', num_invalid, 100*num_invalid/num_samples);
+    
+    if num_invalid > 0
+        fprintf('  不合格原因分布:\n');
+        unique_reasons = unique(invalid_reasons(~cellfun(@isempty, invalid_reasons)));
+        for k = 1:length(unique_reasons)
+            count = sum(strcmp(invalid_reasons, unique_reasons{k}));
+            fprintf('    - %s: %d (%.1f%%)\n', unique_reasons{k}, count, 100*count/num_invalid);
+        end
+    end
+    fprintf('----------------------------------------\n');
+end
+
+%% 9. 单样本验证函数 (本地函数)
 function [is_valid, reason] = validate_single_sample(fam, tye, cy5, dt_this, min_dt_threshold)
     % 统一的样本质量验证逻辑
     % 输入: 3条曲线, 实际dt, 最小dt阈值
