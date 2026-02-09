@@ -251,9 +251,19 @@ if num_valid > 0
     [n_new, ~, ~] = size(X_valid);
     
     % 写入 matfile (X_final, Y_final)
-    % 注意: matfile 支持部分写入
-    m.X_final(1:n_new, :, :) = X_valid;
-    m.Y_final(1:n_new, :) = Y_valid;
+    % 注意: matfile 在变量不存在时不能使用冒号作为维度索引
+    % 所以第一次写入时直接赋值，或者指定完整大小
+    if total_saved == 0
+        % 第一次写入，直接创建变量
+        m.X_final = X_valid;
+        m.Y_final = Y_valid;
+    else
+        % 追加写入
+        % 这里的索引逻辑实际上只有在 total_saved > 0 时才会用到
+        % 但为了代码健壮性，保留分支
+        m.X_final(1:n_new, :, :) = X_valid;
+        m.Y_final(1:n_new, :) = Y_valid; 
+    end
     
     total_saved = n_new;
     fprintf('已保存初始批次 %d 个合格样本。\n', n_new);
@@ -364,14 +374,23 @@ while num_valid < target_num_samples && round_num <= max_rounds
         X_additional_valid = X_additional(valid_additional, :, :);
         Y_additional_valid = Y_additional(valid_additional, :);
         
+        [n_add, ~, ~] = size(X_additional_valid);
+        
         % 写入 matfile
         start_idx = total_saved + 1;
-        end_idx = total_saved + num_valid_additional;
+        end_idx = total_saved + n_add;
         
-        m.X_final(start_idx:end_idx, :, :) = X_additional_valid;
-        m.Y_final(start_idx:end_idx, :) = Y_additional_valid;
+        % 确保 matfile 中变量已存在 (通常在 5.2 已经创建)
+        % 如果 5.2 没有合格样本，这里可能是第一次写入
+        if total_saved == 0
+             m.X_final = X_additional_valid;
+             m.Y_final = Y_additional_valid;
+        else
+            m.X_final(start_idx:end_idx, :, :) = X_additional_valid;
+            m.Y_final(start_idx:end_idx, :) = Y_additional_valid;
+        end
         
-        total_saved = total_saved + num_valid_additional;
+        total_saved = total_saved + n_add;
         num_valid = total_saved;
     end
     
