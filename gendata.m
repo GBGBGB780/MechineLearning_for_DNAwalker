@@ -26,7 +26,7 @@ tic; % 开始计时
 
 % --- 从您的需求中定义 ---
 target_num_samples = 15000;      % 目标合格样本总数
-initial_sample_ratio = 2.0;       % 初始采样冗余比例（生成2倍样本以应对质量过滤）
+initial_sample_ratio = 3.0;       % 初始采样冗余比例（生成3倍样本以应对质量过滤）
 num_samples = round(target_num_samples * initial_sample_ratio);  % 初始生成样本数
 
 simu_time = 130;    % 模拟时间为130min
@@ -163,13 +163,13 @@ max_rounds = 500;  % 最大补充轮数，防止无限循环，设置一个比�
 
 while total_saved < target_num_samples && round_num <= max_rounds
     needed = target_num_samples - total_saved;
-    extra_generate = ceil(needed * 2.5);  % 生成250%作为冗余
+    extra_generate = ceil(needed * 4);  % 生成400%作为冗余
 
     fprintf('\n========================================\n');
     fprintf('=== 第 %d 轮补充采样 ===\n', round_num);
     fprintf('当前合格数: %d / %d\n', total_saved, target_num_samples);
     fprintf('需要补充: %d 个样本\n', needed);
-    fprintf('计划生成: %d 个样本 (含250%%冗余)\n', extra_generate);
+    fprintf('计划生成: %d 个样本 (含400%%冗余)\n', extra_generate);
     fprintf('========================================\n');
 
     % 1. 生成增量 LHS 参数 (一次性生成本轮所需的 Y)
