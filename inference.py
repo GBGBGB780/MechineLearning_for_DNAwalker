@@ -119,11 +119,17 @@ class NanorobotPredictor:
         # Move to CPU and numpy
         predicted_scaled_np = predicted_scaled.cpu().numpy()
         
-        # 5. 反归一化 (Scaler Inverse Transform) -> 得到 log10(|Y|)
+        # 5. 反归一化 (Scaler Inverse Transform) -> 得到 log10(|Y| + epsilon)
         predicted_log_abs = self.y_scaler.inverse_transform(predicted_scaled_np)
         
         # 6. 转回实数域 (10^x)，得到绝对值 |Y|
-        predicted_abs = np.power(10, predicted_log_abs)
+        # transform: Y_log = log10(|Y| + eps)
+        # inverse:   |Y| + eps = 10^Y_log  =>  |Y| = 10^Y_log - eps
+        log_epsilon = self.config.get_log_epsilon()
+        predicted_abs = np.power(10, predicted_log_abs) - log_epsilon
+        
+        # 防止 epsilon 造成的微小负数
+        predicted_abs = np.maximum(predicted_abs, 0.0)
         
         # 7. 恢复符号 (Sign Restoration)
         # 模型训练时使用了 abs()，丢失了符号信息。
