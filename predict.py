@@ -47,16 +47,8 @@ def load_real_experimental_data(config, data_path):
         return None
 
     # --- d. 清理并调整数据 ---
-    # (这部分逻辑也借鉴自 nanorobot_solver.py)
     mask = ~np.isnan(exp_time) & ~np.isnan(exp_fam) & ~np.isnan(exp_tye) & ~np.isnan(exp_cy5)
     exp_time, exp_fam, exp_tye, exp_cy5 = exp_time[mask], exp_fam[mask], exp_tye[mask], exp_cy5[mask]
-
-    # !!! 关键修正 !!!
-    # 原本代码中试图减去 p_unbind_track，可能是为了去基线。
-    # 但 gendata.m 中生成的训练数据包含了 p_unbind_track (signal_CY5 = ... + p_unbind_track)。
-    # 因此，如果实验数据本身就是测量到的信号（含背景），那么直接输入给模型才是正确的（因为模型是在含背景数据上训练的）。
-    # 如果强行减去，反而会导致数据分布偏移（Shift），导致预测完全错误。
-    # exp_cy5_adjusted = exp_cy5 - p_unbind_track  <-- 这里是错误的源头之一
     
     # 直接使用原始数据
     exp_cy5_adjusted = exp_cy5
