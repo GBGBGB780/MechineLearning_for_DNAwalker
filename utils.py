@@ -40,8 +40,25 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
 
     # 从config读取log_epsilon
     log_epsilon = config.get_log_epsilon()
-    # 加一个极小值防止 log(0) 报错
+    
+    # !!! CRITICAL FIX !!!
+    # 原代码: Y_data = np.log10(np.abs(Y_data) + log_epsilon)
+    # 问题: np.abs() 会将所有负数能量 (E_b < 0) 变成正数，导致符号信息完全丢失！
+    # 解决方案: 对于可能为负的参数，使用 sign-magnitude 分离策略
+    # 1. 保存符号 (sign)
+    # 2. 对绝对值取对数
+    # 3. 训练时学习绝对值
+    # 4. 预测时根据参数范围恢复符号
+    
+    # 保存原始符号 (用于调试，实际恢复符号靠 param_ranges)
+    Y_sign = np.sign(Y_data)
+    
+    # 对数变换 (magnitude only)
+    # log10(|Y| + eps) 保证数值稳定性
     Y_data = np.log10(np.abs(Y_data) + log_epsilon)
+    
+    print(f"Y数据对数变换完成。注意：符号信息将在预测时根据参数范围恢复。")
+    print(f"  Y变换后的范围: [{Y_data.min():.4f}, {Y_data.max():.4f}]")
     # --- 预处理 X (输入) ---
     # 1. 扁平化: 将 (N, 3, 7801) 变为 (N, 23403)
     num_samples_original = X_data.shape[0]

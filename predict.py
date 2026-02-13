@@ -76,7 +76,39 @@ def load_real_experimental_data(config, data_path):
         print(f"错误信息: {e}")
         return None
 
-    # --- f. 组合并返回 ---
+    # --- f. 分布对齐 (Distribution Alignment) ---
+    # !!! CRITICAL FIX for FAM direction error !!!
+    # 
+    # 问题: 训练数据和实验数据的统计分布差异巨大
+    #   训练FAM: mean=0.165, std=0.165
+    #   实验FAM: mean=0.741, std=0.037
+    # 
+    # 如果直接用 StandardScaler，实验数据会被严重扭曲
+    # 解决: 对齐分布 - 使实验数据的统计特性与训练数据一致
+    
+    # 训练数据的统计参数 (从 diagnose_normalization.py 获取)
+    TRAIN_STATS = {
+        'fam': {'mean': 0.1649, 'std': 0.1653},
+        'tye': {'mean': 0.8441, 'std': 0.1254},
+        'cy5': {'mean': 0.4234, 'std': 0.2212}
+    }
+    
+    print("  应用分布对齐...")
+    print(f"    实验 FAM 原始: mean={curve_fam.mean():.4f}, std={curve_fam.std():.4f}")
+    print(f"    实验 TYE 原始: mean={curve_tye.mean():.4f}, std={curve_tye.std():.4f}")
+    print(f"    实验 CY5 原始: mean={curve_cy5.mean():.4f}, std={curve_cy5.std():.4f}")
+    
+    # Z-score 归一化 + 逆变换到训练分布
+    # (x - μ_exp) / σ_exp * σ_train + μ_train
+    curve_fam = ((curve_fam - curve_fam.mean()) / (curve_fam.std() + 1e-8)) * TRAIN_STATS['fam']['std'] + TRAIN_STATS['fam']['mean']
+    curve_tye = ((curve_tye - curve_tye.mean()) / (curve_tye.std() + 1e-8)) * TRAIN_STATS['tye']['std'] + TRAIN_STATS['tye']['mean']
+    curve_cy5 = ((curve_cy5 - curve_cy5.mean()) / (curve_cy5.std() + 1e-8)) * TRAIN_STATS['cy5']['std'] + TRAIN_STATS['cy5']['mean']
+    
+    print(f"    对齐后 FAM: mean={curve_fam.mean():.4f}, std={curve_fam.std():.4f}")
+    print(f"    对齐后 TYE: mean={curve_tye.mean():.4f}, std={curve_tye.std():.4f}")
+    print(f"    对齐后 CY5: mean={curve_cy5.mean():.4f}, std={curve_cy5.std():.4f}")
+
+    # --- g. 组合并返回 ---
     # axis=0 使形状为 (3, T)，与 gendata.m 和 model.py 一致
     X_sample_raw = np.stack([curve_fam, curve_tye, curve_cy5], axis=0)
 
