@@ -7,7 +7,8 @@ import pandas as pd
 import subprocess
 
 # Local imports
-from predict import NanorobotPredictor, load_real_experimental_data
+from inference import NanorobotPredictor
+from predict import load_real_experimental_data
 from config_loader import Config
 
 

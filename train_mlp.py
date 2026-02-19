@@ -90,8 +90,9 @@ def train():
 
             # 3. 反向传播和优化
             optimizer.zero_grad()  # 清空梯度
-            loss.backward()  # 计算梯度
-            optimizer.step()  # 更新权重
+            loss.backward()        # 计算梯度
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # 防止梯度爆炸
+            optimizer.step()       # 更新权重
 
             total_train_loss += loss.item()
 

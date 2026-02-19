@@ -5,7 +5,7 @@ import torch
 import os
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler
 
 
 def load_and_preprocess_data(npz_filename, batch_size=64, config=None):

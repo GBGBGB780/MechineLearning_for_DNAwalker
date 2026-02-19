@@ -46,7 +46,7 @@ class NanorobotPredictor:
         self.y_scaler_path = self.config.get_y_scaler_file()
         
         # 3. Load Scalers
-        self.x_scaler = self._load_pickle(self.x_scaler_path, "X Scaler")
+        # x_scaler 已弃用（改为逐通道逐样本归一化），只需加载 y_scaler
         self.y_scaler = self._load_pickle(self.y_scaler_path, "Y Scaler")
         
         # 4. Load Model
