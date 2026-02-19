@@ -104,9 +104,12 @@ class NanorobotPredictor:
             raise ValueError(f"Input data dimension mismatch. Expected {expected_size} features, got {X_flat.shape[1]}.")
 
         # 2. 逐样本归一化 (per-sample z-score) — 与 utils.py 训练时完全一致
-        sample_mean = X_flat.mean(axis=1, keepdims=True)
-        sample_std  = X_flat.std(axis=1,  keepdims=True) + 1e-8
+        # 使用 nanmean/nanstd，跳过 NaN 位置（实验数据的空白区域）
+        sample_mean = np.nanmean(X_flat, axis=1, keepdims=True)
+        sample_std  = np.nanstd(X_flat,  axis=1, keepdims=True) + 1e-8
         X_scaled = (X_flat - sample_mean) / sample_std
+        # 空白区域（NaN）填 0：在 z-score 空间代表"均值/无信息"
+        X_scaled = np.where(np.isnan(X_scaled), 0.0, X_scaled)
         
         # 3. Convert to Tensor
         X_tensor = torch.tensor(X_scaled, dtype=torch.float32).to(self.device)

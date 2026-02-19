@@ -49,31 +49,40 @@ def load_real_experimental_data(config, data_path):
     # --- d. 清理并调整数据 ---
     mask = ~np.isnan(exp_time) & ~np.isnan(exp_fam) & ~np.isnan(exp_tye) & ~np.isnan(exp_cy5)
     exp_time, exp_fam, exp_tye, exp_cy5 = exp_time[mask], exp_fam[mask], exp_tye[mask], exp_cy5[mask]
-    
-    # 直接使用原始数据
-    exp_cy5_adjusted = exp_cy5
 
-    # --- e. 插值 (Interpolate) ---
-    # (这部分逻辑借鉴自 generate_dataset.py 和 nanorobot_solver.py)
+    # --- e. 映射到标准时间轴（保留空白区域为 NaN）---
+    # 对于实验数据存在的区域，用线性插值取近似值；
+    # 对于空白区域（距离最近数据点超过阈值），直接置 NaN，
+    # 后续在 inference.py 中归一化时空白处填 0（不提供任何信息给模型）。
+    GAP_THRESHOLD = 2.0  # 分钟。超过此距离视为空白（可根据实验数据间隔调整）
+
     try:
-        interp_fam_func = interp1d(exp_time, exp_fam, kind='linear', fill_value='extrapolate')
-        interp_tye_func = interp1d(exp_time, exp_tye, kind='linear', fill_value='extrapolate')
-        interp_cy5_func = interp1d(exp_time, exp_cy5_adjusted, kind='linear', fill_value='extrapolate')
+        interp_fam_func = interp1d(exp_time, exp_fam, kind='linear', bounds_error=False, fill_value=np.nan)
+        interp_tye_func = interp1d(exp_time, exp_tye, kind='linear', bounds_error=False, fill_value=np.nan)
+        interp_cy5_func = interp1d(exp_time, exp_cy5, kind='linear', bounds_error=False, fill_value=np.nan)
 
         curve_fam = interp_fam_func(standard_time_axis)
         curve_tye = interp_tye_func(standard_time_axis)
         curve_cy5 = interp_cy5_func(standard_time_axis)
     except ValueError as e:
-        print(f"错误: 无法插值数据。这可能是因为 {data_path} 中的时间点不足。")
-        print(f"错误信息: {e}")
+        print(f"错误: 无法映射数据。错误信息: {e}")
         return None
 
+    # 检测空白区域：对每个标准时间点，找最近的实验时间点距离
+    # 若距离超过 GAP_THRESHOLD，视为空白，置 NaN
+    nearest_dist = np.min(np.abs(standard_time_axis[:, None] - exp_time[None, :]), axis=1)
+    gap_mask = nearest_dist > GAP_THRESHOLD
+    n_gaps = gap_mask.sum()
+    if n_gaps > 0:
+        print(f"  检测到 {n_gaps} 个时间点在空白区域（距最近数据点 > {GAP_THRESHOLD} min），已置 NaN")
+        curve_fam[gap_mask] = np.nan
+        curve_tye[gap_mask] = np.nan
+        curve_cy5[gap_mask] = np.nan
 
     # --- g. 组合并返回 ---
-    # axis=0 使形状为 (3, T)，与 gendata.m 和 model.py 一致
-    X_sample_raw = np.stack([curve_fam, curve_tye, curve_cy5], axis=0)
-
-    print(f"真实实验数据已成功加载并转换为 (3, {num_time_points}) 格式。")
+    X_sample_raw = np.stack([curve_fam, curve_tye, curve_cy5], axis=0)  # (3, T)
+    valid_pct = 100 * (1 - n_gaps / len(standard_time_axis))
+    print(f"实验数据加载完成: (3, {num_time_points}), 有效时间点占比 {valid_pct:.1f}%")
     return X_sample_raw
 
 
