@@ -103,8 +103,10 @@ class NanorobotPredictor:
         if X_flat.shape[1] != expected_size:
             raise ValueError(f"Input data dimension mismatch. Expected {expected_size} features, got {X_flat.shape[1]}.")
 
-        # 2. Scaling (Normalization)
-        X_scaled = self.x_scaler.transform(X_flat)
+        # 2. 逐样本归一化 (per-sample z-score) — 与 utils.py 训练时完全一致
+        sample_mean = X_flat.mean(axis=1, keepdims=True)
+        sample_std  = X_flat.std(axis=1,  keepdims=True) + 1e-8
+        X_scaled = (X_flat - sample_mean) / sample_std
         
         # 3. Convert to Tensor
         X_tensor = torch.tensor(X_scaled, dtype=torch.float32).to(self.device)

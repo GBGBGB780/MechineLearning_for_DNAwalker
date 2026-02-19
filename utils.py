@@ -104,32 +104,30 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
         return None, None, None, None
     # --- [修正结束] ---
 
-    # 2. 归一化 (StandardScaler: 均值为0, 方差为1)
-    x_scaler = StandardScaler()
-    # [已修正] 在“干净”的数据上进行拟合
-    X_scaled = x_scaler.fit_transform(X_clean)
+    # --- 预处理 X (输入) ---
+    # 逐样本归一化（per-sample z-score）：每个样本减去自身均值、除以自身标准差
+    # 这样训练和预测做完全相同的变换，不依赖全局统计量
+    # 仿真数据和实验数据只要曲线形状一致，归一化后就一致
+    sample_mean = X_clean.mean(axis=1, keepdims=True)   # (N, 1)
+    sample_std  = X_clean.std(axis=1,  keepdims=True) + 1e-8  # 防止除零
+    X_scaled = (X_clean - sample_mean) / sample_std
+    print(f"X 逐样本归一化: 全局 mean≈{X_scaled.mean():.4f}, std≈{X_scaled.std():.4f}")
 
     # --- 预处理 Y (标签) ---
-    # 1. 归一化 (MinMaxScaler: 范围为 [0, 1])
     y_scaler = MinMaxScaler()
-    # [已修正] 在“干净”的数据上进行拟合
     Y_scaled = y_scaler.fit_transform(Y_clean)
 
-    # --- 保存 Scaler (至关重要!) ---
-    # 从config读取scaler文件路径
+    # --- 保存 scaler ---
     x_scaler_file = config.get_x_scaler_file()
     y_scaler_file = config.get_y_scaler_file()
-    
-    # Ensure scaler output directory exists
-    scaler_dir = os.path.dirname(x_scaler_file)
+    scaler_dir = os.path.dirname(y_scaler_file)
     if scaler_dir and not os.path.exists(scaler_dir):
         os.makedirs(scaler_dir, exist_ok=True)
-    
     with open(x_scaler_file, 'wb') as f:
-        pickle.dump(x_scaler, f)
+        pickle.dump(None, f)   # x_scaler 已弃用，保存 None 占位
     with open(y_scaler_file, 'wb') as f:
         pickle.dump(y_scaler, f)
-    print(f"X 和 Y 的归一化 'scalers' 已保存: {x_scaler_file}, {y_scaler_file}")
+    print(f"y_scaler 已保存: {y_scaler_file}  (x_scaler 已弃用)")
 
     # --- 拆分数据集 ---
     # 从config读取拆分比例和随机种子
