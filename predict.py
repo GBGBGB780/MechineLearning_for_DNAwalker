@@ -69,29 +69,29 @@ def load_real_experimental_data(config, data_path):
         return None
 
     # --- f. 分布对齐 (Distribution Alignment) ---
-    # !!! CRITICAL FIX for FAM direction error !!!
-    # 
-    # 问题: 训练数据和实验数据的统计分布差异巨大
-    #   训练FAM: mean=0.165, std=0.165
-    #   实验FAM: mean=0.741, std=0.037
-    # 
-    # 如果直接用 StandardScaler，实验数据会被严重扭曲
-    # 解决: 对齐分布 - 使实验数据的统计特性与训练数据一致
+    # 问题: 训练数据和实验数据的统计分布差异巨大，StandardScaler 会严重扭曲实验数据
+    # 解决: 先将实验数据对齐到训练数据的分布（均值/标准差），再送入模型
     
-    # 训练数据的统计参数 (从 diagnose_normalization.py 获取)
-    TRAIN_STATS = {
-        'fam': {'mean': 0.1649, 'std': 0.1653},
-        'tye': {'mean': 0.8441, 'std': 0.1254},
-        'cy5': {'mean': 0.4234, 'std': 0.2212}
-    }
+    # 动态从训练数据集读取统计量，避免硬编码过期数据
+    dataset_file = config.get_dataset_file()
+    try:
+        _train_data = np.load(dataset_file)
+        _X_train = _train_data['X']  # shape (N, 3, T)
+        TRAIN_STATS = {
+            'fam': {'mean': float(_X_train[:, 0, :].mean()), 'std': float(_X_train[:, 0, :].std())},
+            'tye': {'mean': float(_X_train[:, 1, :].mean()), 'std': float(_X_train[:, 1, :].std())},
+            'cy5': {'mean': float(_X_train[:, 2, :].mean()), 'std': float(_X_train[:, 2, :].std())},
+        }
+        print(f"  从训练数据动态计算分布统计量: {dataset_file}")
+    except Exception as e:
+        print(f"无法加载训练数据统计量 ({e})")
     
     print("  应用分布对齐...")
     print(f"    实验 FAM 原始: mean={curve_fam.mean():.4f}, std={curve_fam.std():.4f}")
     print(f"    实验 TYE 原始: mean={curve_tye.mean():.4f}, std={curve_tye.std():.4f}")
     print(f"    实验 CY5 原始: mean={curve_cy5.mean():.4f}, std={curve_cy5.std():.4f}")
     
-    # Z-score 归一化 + 逆变换到训练分布
-    # (x - μ_exp) / σ_exp * σ_train + μ_train
+    # Z-score 归一化 + 逆变换到训练分布: (x - μ_exp) / σ_exp * σ_train + μ_train
     curve_fam = ((curve_fam - curve_fam.mean()) / (curve_fam.std() + 1e-8)) * TRAIN_STATS['fam']['std'] + TRAIN_STATS['fam']['mean']
     curve_tye = ((curve_tye - curve_tye.mean()) / (curve_tye.std() + 1e-8)) * TRAIN_STATS['tye']['std'] + TRAIN_STATS['tye']['mean']
     curve_cy5 = ((curve_cy5 - curve_cy5.mean()) / (curve_cy5.std() + 1e-8)) * TRAIN_STATS['cy5']['std'] + TRAIN_STATS['cy5']['mean']
