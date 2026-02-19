@@ -103,13 +103,19 @@ class NanorobotPredictor:
         if X_flat.shape[1] != expected_size:
             raise ValueError(f"Input data dimension mismatch. Expected {expected_size} features, got {X_flat.shape[1]}.")
 
-        # 2. 逐样本归一化 (per-sample z-score) — 与 utils.py 训练时完全一致
-        # 使用 nanmean/nanstd，跳过 NaN 位置（实验数据的空白区域）
-        sample_mean = np.nanmean(X_flat, axis=1, keepdims=True)
-        sample_std  = np.nanstd(X_flat,  axis=1, keepdims=True) + 1e-8
-        X_scaled = (X_flat - sample_mean) / sample_std
-        # 空白区域（NaN）填 0：在 z-score 空间代表"均值/无信息"
-        X_scaled = np.where(np.isnan(X_scaled), 0.0, X_scaled)
+        # 2. 逐通道逐样本归一化 — 与 utils.py 训练时完全一致
+        # 还原为 (N, 3, seq_len) → 每条曲线独立 z-score → 展平
+        num_channels = self.config.get_num_curves()  # 3
+        seq_len = self.input_size // num_channels     # 7801
+        X_3d = X_flat.reshape(-1, num_channels, seq_len)
+        for c in range(num_channels):
+            ch = X_3d[:, c, :]                                        # (N, seq_len)
+            ch_mean = np.nanmean(ch, axis=1, keepdims=True)
+            ch_std  = np.nanstd(ch,  axis=1, keepdims=True) + 1e-8
+            X_3d[:, c, :] = (ch - ch_mean) / ch_std
+        # 空白区域（NaN）填 0：z-score 空间的均值，不提供任何信息
+        X_3d = np.where(np.isnan(X_3d), 0.0, X_3d)
+        X_scaled = X_3d.reshape(X_flat.shape[0], -1)  # 展平回 (N, 23403)
         
         # 3. Convert to Tensor
         X_tensor = torch.tensor(X_scaled, dtype=torch.float32).to(self.device)

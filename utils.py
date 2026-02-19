@@ -104,14 +104,17 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
         return None, None, None, None
     # --- [修正结束] ---
 
-    # --- 预处理 X (输入) ---
-    # 逐样本归一化（per-sample z-score）：每个样本减去自身均值、除以自身标准差
-    # 这样训练和预测做完全相同的变换，不依赖全局统计量
-    # 仿真数据和实验数据只要曲线形状一致，归一化后就一致
-    sample_mean = X_clean.mean(axis=1, keepdims=True)   # (N, 1)
-    sample_std  = X_clean.std(axis=1,  keepdims=True) + 1e-8  # 防止除零
-    X_scaled = (X_clean - sample_mean) / sample_std
-    print(f"X 逐样本归一化: 全局 mean≈{X_scaled.mean():.4f}, std≈{X_scaled.std():.4f}")
+    # --- 预处理 X (输入): 逐通道逐样本归一化 ---
+    # 先还原为 (N, 3, 7801)，对每条曲线独立做 z-score，再展平
+    # 好处：保留 FAM/TYE/CY5 三条曲线之间的相对幅值信息
+    num_channels = X_data.shape[1]   # 3
+    X_clean_3d = X_clean.reshape(-1, num_channels, X_data.shape[2])  # (N, 3, 7801)
+    for c in range(num_channels):
+        ch_mean = X_clean_3d[:, c, :].mean(axis=1, keepdims=True)   # (N, 1)
+        ch_std  = X_clean_3d[:, c, :].std(axis=1,  keepdims=True) + 1e-8
+        X_clean_3d[:, c, :] = (X_clean_3d[:, c, :] - ch_mean) / ch_std
+    X_scaled = X_clean_3d.reshape(X_clean.shape[0], -1)  # 展平回 (N, 23403)
+    print(f"X 逐通道归一化: 全局 mean≈{X_scaled.mean():.4f}, std≈{X_scaled.std():.4f}")
 
     # --- 预处理 Y (标签) ---
     y_scaler = MinMaxScaler()
