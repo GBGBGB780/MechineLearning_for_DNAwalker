@@ -111,6 +111,38 @@ class Config:
         """获取随机种子"""
         return self.config.getint('TRAINING', 'random_seed')
     
+    def get_early_stopping_patience(self):
+        """获取 Early Stopping 耐心值 (0=禁用)"""
+        return self.config.getint('TRAINING', 'early_stopping_patience', fallback=0)
+    
+    def get_loss_weights(self, param_names):
+        """
+        获取损失函数权重
+        
+        Args:
+            param_names: 参数名称列表
+        Returns:
+            numpy array of weights, or None if mode is 'none'
+        """
+        import numpy as np
+        mode = self.config.get('TRAINING', 'loss_weight_mode', fallback='none').strip()
+        if mode == 'none':
+            return None
+        elif mode == 'inverse_range':
+            # 按参数范围的倒数加权（MinMaxScaler后的空间中）
+            ranges = self.get_param_ranges()
+            weights = []
+            for name in param_names:
+                min_val, max_val = ranges.get(name, (-3.0, 3.0))
+                param_range = max(abs(max_val - min_val), 1e-10)
+                weights.append(1.0 / param_range)
+            weights = np.array(weights, dtype=np.float32)
+            weights = weights / weights.sum() * len(weights)  # 归一化：均值为1
+            return weights
+        else:
+            print(f"Warning: Unknown loss_weight_mode '{mode}', using equal weights.")
+            return None
+    
     # ==================== MODEL_ARCHITECTURE 参数 ====================
     # 注意: num_curves 和 seq_length 现在从 TRAINING 节读取
     
@@ -154,6 +186,14 @@ class Config:
     def get_fc1_out_features(self):
         """获取第一层全连接层输出维度"""
         return self.config.getint('MODEL_ARCHITECTURE', 'fc1_out_features')
+    
+    def get_dropout_conv(self):
+        """获取卷积层 Dropout 率"""
+        return self.config.getfloat('MODEL_ARCHITECTURE', 'dropout_conv', fallback=0.0)
+    
+    def get_dropout_fc(self):
+        """获取全连接层 Dropout 率"""
+        return self.config.getfloat('MODEL_ARCHITECTURE', 'dropout_fc', fallback=0.0)
     
     # ==================== DATA_PROCESSING 参数 ====================
     

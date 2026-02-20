@@ -24,6 +24,7 @@ def train():
     NUM_EPOCHS = config.get_num_epochs()
     DATASET_FILE = config.get_dataset_file()
     MODEL_SAVE_PATH = config.get_model_save_path()
+    EARLY_STOPPING_PATIENCE = config.get_early_stopping_patience()
     
     # Ensure output directory exists
     output_dir = os.path.dirname(MODEL_SAVE_PATH)
@@ -37,6 +38,7 @@ def train():
     print(f"  - 学习率: {LEARNING_RATE}")
     print(f"  - 批次大小: {BATCH_SIZE}")
     print(f"  - 训练轮数: {NUM_EPOCHS}")
+    print(f"  - Early Stopping 耐心值: {EARLY_STOPPING_PATIENCE}")
     print()
     
     # --- 2. 加载数据 ---
@@ -56,8 +58,20 @@ def train():
     # 传递config给模型，让模型从配置文件读取结构参数
     model = InverseCNN(INPUT_SIZE, OUTPUT_SIZE, config).to(device)
 
-    # 损失函数: 均方误差(MSE)，因为这是回归问题
-    criterion = nn.MSELoss()
+    # 损失函数: 加权 MSE
+    # 权重基于参数范围的倒数：范围越小的参数，权重越高，模型会更努力学它
+    loss_weights = config.get_loss_weights(param_names)
+    if loss_weights is not None:
+        loss_weights_tensor = torch.tensor(loss_weights, dtype=torch.float32).to(device)
+        print(f"使用加权 MSE Loss，权重: {dict(zip(param_names, [f'{w:.4f}' for w in loss_weights]))}")
+        
+        def weighted_mse_loss(pred, target):
+            return (loss_weights_tensor * (pred - target) ** 2).mean()
+        
+        criterion = weighted_mse_loss
+    else:
+        criterion = nn.MSELoss()
+        print("使用标准 MSE Loss")
 
     # 优化器: Adam 是一个稳健的好选择
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
@@ -73,6 +87,7 @@ def train():
 
     # --- 4. 训练循环 ---
     best_val_loss = float('inf')
+    epochs_no_improve = 0  # Early Stopping 计数器
 
     for epoch in range(NUM_EPOCHS):
         # --- 训练阶段 ---
@@ -116,11 +131,18 @@ def train():
         # 打印时带上当前的学习率
         print(f"Epoch {epoch + 1:03d}/{NUM_EPOCHS} | Train Loss: {avg_train_loss:.6f} | Val Loss: {avg_val_loss:.6f} | LR: {current_lr:.8f}")
 
-        # --- 保存最佳模型 ---
+        # --- 保存最佳模型 + Early Stopping ---
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
+            epochs_no_improve = 0
             torch.save(model.state_dict(), MODEL_SAVE_PATH)
             print(f"  -> 新的最佳模型已保存到 {MODEL_SAVE_PATH} (Val Loss: {avg_val_loss:.6f})")
+        else:
+            epochs_no_improve += 1
+            if epochs_no_improve >= EARLY_STOPPING_PATIENCE:
+                print(f"\n*** Early Stopping: 验证损失连续 {EARLY_STOPPING_PATIENCE} 轮未改善，提前停止训练 ***")
+                print(f"*** 最佳验证损失: {best_val_loss:.6f} (在 Epoch {epoch + 1 - EARLY_STOPPING_PATIENCE}) ***")
+                break
 
     print("--- 训练完成 ---")
 
@@ -146,3 +168,4 @@ def train():
 
 if __name__ == "__main__":
     train()
+

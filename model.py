@@ -4,7 +4,8 @@ import torch.nn as nn
 
 class InverseCNN(nn.Module):
     """
-    注意：内部已经升级为强大的 1D-CNN (一维卷积神经网络)。
+    1D-CNN 用于从荧光曲线反推物理参数。
+    特性：BatchNorm + Dropout 防过拟合，加深的全连接回归头。
     """
 
     def __init__(self, input_size, output_size, config):
@@ -30,6 +31,10 @@ class InverseCNN(nn.Module):
         conv4 = config.get_conv4_params()
         fc1_features = config.get_fc1_out_features()
         
+        # 从配置读取 Dropout 率
+        dropout_conv = config.get_dropout_conv()
+        dropout_fc = config.get_dropout_fc()
+        
         # --- 卷积特征提取器 (Feature Extractor) ---
         self.features = nn.Sequential(
             # 第一层卷积: 识别基础形状 (斜率, 简单波形)
@@ -37,21 +42,24 @@ class InverseCNN(nn.Module):
                      kernel_size=conv1['kernel_size'], stride=conv1['stride'], padding=conv1['padding']),
             nn.BatchNorm1d(conv1['out_channels']),
             nn.ReLU(),
-            nn.MaxPool1d(kernel_size=2, stride=2), # 长度减半
+            nn.MaxPool1d(kernel_size=2, stride=2),
+            nn.Dropout(dropout_conv),
             
             # 第二层卷积: 识别复杂组合
             nn.Conv1d(conv1['out_channels'], conv2['out_channels'], 
                      kernel_size=conv2['kernel_size'], stride=conv2['stride'], padding=conv2['padding']),
             nn.BatchNorm1d(conv2['out_channels']),
             nn.ReLU(),
-            nn.MaxPool1d(kernel_size=2, stride=2), # 长度再减半
+            nn.MaxPool1d(kernel_size=2, stride=2),
+            nn.Dropout(dropout_conv),
             
             # 第三层卷积: 提取深层物理规律
             nn.Conv1d(conv2['out_channels'], conv3['out_channels'], 
                      kernel_size=conv3['kernel_size'], stride=conv3['stride'], padding=conv3['padding']),
             nn.BatchNorm1d(conv3['out_channels']),
             nn.ReLU(),
-            nn.MaxPool1d(kernel_size=2, stride=2), # 长度再减半
+            nn.MaxPool1d(kernel_size=2, stride=2),
+            nn.Dropout(dropout_conv),
             
             # 第四层卷积: 极致压缩
             nn.Conv1d(conv3['out_channels'], conv4['out_channels'], 
@@ -62,11 +70,16 @@ class InverseCNN(nn.Module):
         )
         
         # --- 回归预测层 (Regressor) ---
+        # 加深: 256 → 256 → ReLU+Dropout → 128 → ReLU+Dropout → 7
         self.regressor = nn.Sequential(
-            nn.Flatten(),           # 压平 (Batch, conv4_channels, 1) -> (Batch, conv4_channels)
-            nn.Linear(conv4['out_channels'], fc1_features),
+            nn.Flatten(),
+            nn.Linear(conv4['out_channels'], conv4['out_channels']),  # 256→256
             nn.ReLU(),
-            nn.Linear(fc1_features, output_size) # 输出物理参数
+            nn.Dropout(dropout_fc),
+            nn.Linear(conv4['out_channels'], fc1_features),           # 256→128
+            nn.ReLU(),
+            nn.Dropout(dropout_fc),
+            nn.Linear(fc1_features, output_size)                      # 128→7
         )
 
     def forward(self, x):
