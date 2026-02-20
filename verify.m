@@ -571,31 +571,17 @@ p_config=p_config';
 %..........................................................................
 %                               dynamics
 
-% 采样间隔: 每秒记录一次 (与 gendata.m 一致)
-save_interval_min = 1/60;  % 1秒 = 1/60 分钟
-simu_time = 130;           % 总模拟时间 (分钟)
-num_results = simu_time / save_interval_min + 1;  % 7801 个数据点
-total_steps = round(simu_time * 60 / dt);
-
-% 预分配数组
-result_signal = zeros(num_results, 4);
-result_p_s = zeros(num_results, 7);
-result_p_d = zeros(num_results, 9);
-result_b_fb = zeros(num_results, 3);
-result_mig = zeros(num_results, 6);
-
 i_result=1;
-for i=0:1:total_steps
-    current_time_min = i * dt / 60;
-    
-    if mod(floor(current_time_min/10)+1,2)==1
+for i=0:1:130*60*1/dt  % 130分钟模拟时间
+
+    if mod(floor(i*dt/60/10)+1,2)==1
         R_dyn=R_vis;
         k_dyn=k_trans;
     else
         R_dyn=R_UV;
         k_dyn=k_cis;
     end
-    
+
     if i==0
         dp14=0;
         dp25=0;
@@ -610,39 +596,38 @@ for i=0:1:total_steps
         dp36=dp36+dt*(p_config_old(6)*k_dyn(6,3)-p_config_old(3)*k_dyn(3,6));
         dp511=dp511+dt*(p_config_old(11)*k_dyn(11,5)-p_config_old(5)*k_dyn(5,11));
         dp212=dp212+dt*(p_config_old(2)*k_dyn(2,12)-p_config_old(12)*k_dyn(12,2));
-    end    
-    
-    if mod(floor(current_time_min/10)+1,2)==1
+    end
+
+
+    if mod(floor(i*dt/60/10)+1,2)==1
         b_forward=0;
         b_backward=0;
     else
         b_forward=b_forward+p_config(2)*k_cis(2,8)*dt-p_config(8)*k_cis(8,2)*dt+p_config(2)*k_cis(2,12)*dt-p_config(12)*k_cis(12,2)*dt+p_config(5)*k_cis(5,10)*dt-p_config(10)*k_cis(10,5)*dt+p_config(5)*k_cis(5,14)*dt-p_config(14)*k_cis(14,5)*dt;
         b_backward=b_backward+p_config(2)*k_cis(2,7)*dt-p_config(7)*k_cis(7,2)*dt+p_config(2)*k_cis(2,13)*dt-p_config(13)*k_cis(13,2)*dt+p_config(5)*k_cis(5,9)*dt-p_config(9)*k_cis(9,5)*dt+p_config(5)*k_cis(5,11)*dt-p_config(11)*k_cis(11,5)*dt;
     end
-    
-    % 每秒记录一次 (与 gendata.m 一致)
-    if mod(current_time_min, save_interval_min) < (dt / 60)
-        if i_result > num_results
-            break;
-        end
+
+
+
+    if mod(i*dt,60)==0
         signal_FAM=p_config(1)+p_config(2)+p_config(4)+p_config(5)+p_config(7)+p_config(11)+p_config(9)+p_config(13);
         signal_TYE=p_config(2)+p_config(3)+p_config(5)+p_config(6)+p_config(8)+p_config(12)+p_config(10)+p_config(14);
         signal_CY5=p_config(1)+p_config(3)+p_config(4)+p_config(6)+0.09507;
-        
-        result_signal(i_result,1)=current_time_min;
+
+        result_signal(i_result,1)=i*dt/60;
         result_signal(i_result,2)=signal_FAM;
         result_signal(i_result,3)=signal_TYE;
         result_signal(i_result,4)=signal_CY5;
-        
-        result_p_s(i_result,1)=current_time_min;
+
+        result_p_s(i_result,1)=i*dt/60;
         result_p_s(i_result,2)=p_config(1);
         result_p_s(i_result,3)=p_config(2);
         result_p_s(i_result,4)=p_config(3);
         result_p_s(i_result,5)=p_config(4);
         result_p_s(i_result,6)=p_config(5);
         result_p_s(i_result,7)=p_config(6);
-        
-        result_p_d(i_result,1)=current_time_min;
+
+        result_p_d(i_result,1)=i*dt/60;
         result_p_d(i_result,2)=p_config(7);
         result_p_d(i_result,3)=p_config(8);
         result_p_d(i_result,4)=p_config(9);
@@ -651,23 +636,23 @@ for i=0:1:total_steps
         result_p_d(i_result,7)=p_config(12);
         result_p_d(i_result,8)=p_config(13);
         result_p_d(i_result,9)=p_config(14);
-        
-        result_b_fb(i_result,1)=current_time_min;
+
+        result_b_fb(i_result,1)=i*dt/60;
         result_b_fb(i_result,2)=b_forward;
         result_b_fb(i_result,3)=b_backward;
-        
-        result_mig(i_result,1)=current_time_min;
+
+        result_mig(i_result,1)=i*dt/60;
         result_mig(i_result,2)=dp14;
         result_mig(i_result,3)=dp25;
         result_mig(i_result,4)=dp36;
         result_mig(i_result,5)=dp511;
         result_mig(i_result,6)=dp212;
 
-        
+
         i_result=i_result+1;
-        
+
     end
-    
+
 end
 %p_config
 result_signal_change(:,1)=result_signal(:,1);
@@ -683,14 +668,13 @@ result_signal_change(:,8)=result_signal_change(:,4)-result_signal_change(:,5);
 num_data_points = size(result_signal, 1);
 
 % 动态计算循环次数，避免数组越界
-% 采样现在是每秒1个点，20分钟=1200个点，10分钟=600个点
-% result_DD: 需要访问 i*1200+1，所以最大 i 满足 i*1200+1 <= num_data_points
-max_i_DD = floor((num_data_points - 1) / 1200);
+% result_DD: 需要访问 i*20+1，所以最大 i 满足 i*20+1 <= num_data_points
+max_i_DD = floor((num_data_points - 1) / 20);
 if max_i_DD > 0
     for i=1:1:max_i_DD
         result_DD(i,1)=i;
-        result_DD(i,2)=(result_signal(i*1200+1,3)-result_signal(1,3))/result_signal(1,3)-(result_signal(i*1200+1,2)-result_signal(1,2))/result_signal(1,2);
-        result_DD(i,3)=((result_signal(i*1200+1,4)-result_signal(1,4))/result_signal(1,4)+(result_signal(i*1200+1,3)-result_signal(1,3))/result_signal(1,3)+(result_signal(i*1200+1,2)-result_signal(1,2))/result_signal(1,2))/3;
+        result_DD(i,2)=(result_signal(i*20+1,3)-result_signal(1,3))/result_signal(1,3)-(result_signal(i*20+1,2)-result_signal(1,2))/result_signal(1,2);
+        result_DD(i,3)=((result_signal(i*20+1,4)-result_signal(1,4))/result_signal(1,4)+(result_signal(i*20+1,3)-result_signal(1,3))/result_signal(1,3)+(result_signal(i*20+1,2)-result_signal(1,2))/result_signal(1,2))/3;
     end
     fprintf('result_DD: 计算了 %d 个数据点\n', max_i_DD);
 else
@@ -698,12 +682,12 @@ else
     result_DD = [];
 end
 
-% result_bb: 需要访问 i*1200+1 和 i*1200-600+1，所以最大 i 满足 i*1200+1 <= num_data_points
-max_i_bb = floor((num_data_points - 1) / 1200);
+% result_bb: 需要访问 i*20+1 和 i*20-10+1，所以最大 i 满足 i*20+1 <= num_data_points
+max_i_bb = floor((num_data_points - 1) / 20);
 if max_i_bb > 0
     for i=1:1:max_i_bb
         result_bb(i,1)=i;
-        result_bb(i,2)=(result_signal(i*1200+1,2)-result_signal(i*1200-600+1,2))/(result_signal(i*1200+1,3)-result_signal(i*1200-600+1,3));
+        result_bb(i,2)=(result_signal(i*20+1,2)-result_signal(i*20-10+1,2))/(result_signal(i*20+1,3)-result_signal(i*20-10+1,3));
     end
     fprintf('result_bb: 计算了 %d 个数据点\n', max_i_bb);
 else
@@ -711,13 +695,13 @@ else
     result_bb = [];
 end
 
-% result_bb_2: 需要访问 i*1200，所以最大 i 满足 i*1200 <= size(result_b_fb,1)
+% result_bb_2: 需要访问 i*20，所以最大 i 满足 i*20 <= size(result_b_fb,1)
 num_b_fb_points = size(result_b_fb, 1);
-max_i_bb2 = floor(num_b_fb_points / 1200);
+max_i_bb2 = floor(num_b_fb_points / 20);
 if max_i_bb2 > 0
     for i=1:1:max_i_bb2
         result_bb_2(i,1)=i;
-        result_bb_2(i,2)=result_b_fb(i*1200,2)/result_b_fb(i*1200,3);
+        result_bb_2(i,2)=result_b_fb(i*20,2)/result_b_fb(i*20,3);
     end
     fprintf('result_bb_2: 计算了 %d 个数据点\n', max_i_bb2);
 else
