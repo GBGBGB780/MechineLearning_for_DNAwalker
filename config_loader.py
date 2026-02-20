@@ -169,6 +169,11 @@ class Config:
         """获取log变换时的极小值"""
         return self.config.getfloat('DATA_PROCESSING', 'log_epsilon')
     
+    def get_log_transform_params(self):
+        """获取需要做 log10 变换的参数名称列表"""
+        raw = self.config.get('DATA_PROCESSING', 'log_transform_params', fallback='')
+        return [p.strip() for p in raw.split(',') if p.strip()]
+    
     # ==================== DATA_GENERATION 参数 ====================
     
     def get_num_time_points(self):

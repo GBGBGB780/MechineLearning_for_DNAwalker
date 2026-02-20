@@ -128,45 +128,22 @@ class NanorobotPredictor:
         # Move to CPU and numpy
         predicted_scaled_np = predicted_scaled.cpu().numpy()
         
-        # 5. 反归一化 (Scaler Inverse Transform) -> 得到 log10(|Y| + epsilon)
-        predicted_log_abs = self.y_scaler.inverse_transform(predicted_scaled_np)
+        # 5. 反归一化 (Scaler Inverse Transform) -> 得到物理参数值
+        # 对于非 log 变换的参数，直接得到原始值（含符号）
+        # 对于 log 变换的参数（如 k0），得到 log10 值，需要再做 10^x
+        predicted_real = self.y_scaler.inverse_transform(predicted_scaled_np)
         
-        # 6. 转回实数域 (10^x)，得到绝对值 |Y|
-        # 正向: Y_log = log10(|Y| + eps)
-        # 逆向: |Y| = 10^Y_log - eps
+        # 6. 仅对 log 变换过的参数做逆变换 (10^x)
+        log_transform_params = self.config.get_log_transform_params()
         log_epsilon = self.config.get_log_epsilon()
-        predicted_abs = np.power(10, predicted_log_abs) - log_epsilon
-        # 注意: 不在此做 np.maximum(0) 截断，保留精度，让符号恢复后再处理
-        
-        # 7. 恢复符号 (Sign Restoration)
-        # 模型训练时对 Y 取了 log10(|Y|)，符号信息丢失。
-        # 根据 configfile.ini 中的参数范围 [min, max] 来确定性地恢复符号：
-        #   - max <= 0: 参数必为负 -> 乘以 -1
-        #   - min >= 0: 参数必为正 -> 保持正
-        #   - min < 0 < max: 混合范围 -> 以参数名启发 (E_开头视为负)
-        
-        predicted_final = np.zeros_like(predicted_abs)
         param_names = self.config.get_trainable_param_names()
         
-        for i in range(predicted_abs.shape[0]):
-            for j, name in enumerate(param_names):
-                val_abs = predicted_abs[i, j]
-                min_val, max_val = self.param_ranges.get(name, (-1e9, 1e9))
-                
-                if max_val <= 0:
-                    # 范围全负 (如 E_b: [-2, -0.5])
-                    predicted_final[i, j] = -val_abs
-                elif min_val >= 0:
-                    # 范围全正 (如 k_mig: [0.01, 1.0])
-                    predicted_final[i, j] = val_abs
-                else:
-                    # 混合范围 (min < 0 < max): 启发式规则
-                    if name.lower().startswith('e_'):
-                        predicted_final[i, j] = -val_abs
-                    else:
-                        predicted_final[i, j] = val_abs
+        for p in log_transform_params:
+            if p in param_names:
+                idx = param_names.index(p)
+                predicted_real[:, idx] = np.power(10, predicted_real[:, idx]) - log_epsilon
 
-        return predicted_final
+        return predicted_real
 
     def get_param_names(self):
         """Returns the list of trainable parameter names from config."""
