@@ -70,7 +70,7 @@ class InverseCNN(nn.Module):
         )
         
         # --- 回归预测层 (Regressor) ---
-        # 加深: 256 → 256 → ReLU+Dropout → 128 → ReLU+Dropout → 7
+        # 256 → 256 → ReLU+Dropout → 128 → ReLU+Dropout → 7
         self.regressor = nn.Sequential(
             nn.Flatten(),
             nn.Linear(conv4['out_channels'], conv4['out_channels']),  # 256→256

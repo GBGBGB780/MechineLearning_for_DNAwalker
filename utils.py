@@ -55,6 +55,29 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
     # --- 预处理 X (输入) ---
     # 1. 扁平化: 将 (N, 3, 7801) 变为 (N, 23403)
     num_samples_original = X_data.shape[0]
+    
+    # --- 曲线振幅过滤 (在扁平化之前，用 3D 数据) ---
+    if config.get_amplitude_filter_enabled():
+        amp_thresholds = config.get_amplitude_thresholds()  # [FAM, TYE, CY5]
+        channel_names = ['FAM', 'TYE', 'CY5']
+        
+        amp_mask = np.ones(num_samples_original, dtype=bool)
+        for c in range(min(X_data.shape[1], len(amp_thresholds))):
+            amplitudes = X_data[:, c, :].max(axis=1) - X_data[:, c, :].min(axis=1)
+            ch_mask = amplitudes <= amp_thresholds[c]
+            num_filtered = np.sum(~ch_mask & amp_mask)  # 本通道新过滤的数量
+            amp_mask &= ch_mask
+            print(f"  振幅过滤 {channel_names[c]}: 阈值={amp_thresholds[c]:.2f}, "
+                  f"本通道过滤 {num_filtered} 个样本")
+        
+        num_amp_filtered = num_samples_original - np.sum(amp_mask)
+        X_data = X_data[amp_mask]
+        Y_data = Y_data[amp_mask]
+        print(f"振幅过滤: 移除 {num_amp_filtered} 个狂暴样本 "
+              f"({100*num_amp_filtered/num_samples_original:.1f}%), "
+              f"剩余 {X_data.shape[0]} 个")
+        num_samples_original = X_data.shape[0]
+    
     X_flat = X_data.reshape(num_samples_original, -1)  # 形状变为 [N, 23403]
     print(f"X 压平后的形状: {X_flat.shape}")
 

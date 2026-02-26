@@ -115,33 +115,22 @@ class Config:
         """获取 Early Stopping 耐心值 (0=禁用)"""
         return self.config.getint('TRAINING', 'early_stopping_patience', fallback=0)
     
-    def get_loss_weights(self, param_names):
-        """
-        获取损失函数权重
-        
-        Args:
-            param_names: 参数名称列表
-        Returns:
-            numpy array of weights, or None if mode is 'none'
-        """
-        import numpy as np
-        mode = self.config.get('TRAINING', 'loss_weight_mode', fallback='none').strip()
-        if mode == 'none':
-            return None
-        elif mode == 'inverse_range':
-            # 按参数范围的倒数加权（MinMaxScaler后的空间中）
-            ranges = self.get_param_ranges()
-            weights = []
-            for name in param_names:
-                min_val, max_val = ranges.get(name, (-3.0, 3.0))
-                param_range = max(abs(max_val - min_val), 1e-10)
-                weights.append(1.0 / param_range)
-            weights = np.array(weights, dtype=np.float32)
-            weights = weights / weights.sum() * len(weights)  # 归一化：均值为1
-            return weights
-        else:
-            print(f"Warning: Unknown loss_weight_mode '{mode}', using equal weights.")
-            return None
+    def get_loss_weight_mode(self):
+        """获取损失函数权重模式"""
+        return self.config.get('TRAINING', 'loss_weight_mode', fallback='none').strip()
+    
+    # --- 曲线振幅过滤 ---
+    def get_amplitude_filter_enabled(self):
+        """是否启用曲线振幅过滤"""
+        return self.config.getboolean('DATA_PROCESSING', 'amplitude_filter_enabled', fallback=False)
+    
+    def get_amplitude_thresholds(self):
+        """获取各通道的振幅阈值 [FAM, TYE, CY5]"""
+        return [
+            self.config.getfloat('DATA_PROCESSING', 'amplitude_max_fam', fallback=1.0),
+            self.config.getfloat('DATA_PROCESSING', 'amplitude_max_tye', fallback=1.0),
+            self.config.getfloat('DATA_PROCESSING', 'amplitude_max_cy5', fallback=1.0),
+        ]
     
     # ==================== MODEL_ARCHITECTURE 参数 ====================
     # 注意: num_curves 和 seq_length 现在从 TRAINING 节读取

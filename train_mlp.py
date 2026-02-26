@@ -58,22 +58,11 @@ def train():
     # 传递config给模型，让模型从配置文件读取结构参数
     model = InverseCNN(INPUT_SIZE, OUTPUT_SIZE, config).to(device)
 
-    # 损失函数: 加权 MSE
-    # 权重基于参数范围的倒数：范围越小的参数，权重越高，模型会更努力学它
-    loss_weights = config.get_loss_weights(param_names)
-    if loss_weights is not None:
-        loss_weights_tensor = torch.tensor(loss_weights, dtype=torch.float32).to(device)
-        print(f"使用加权 MSE Loss，权重: {dict(zip(param_names, [f'{w:.4f}' for w in loss_weights]))}")
-        
-        def weighted_mse_loss(pred, target):
-            return (loss_weights_tensor * (pred - target) ** 2).mean()
-        
-        criterion = weighted_mse_loss
-    else:
-        criterion = nn.MSELoss()
-        print("使用标准 MSE Loss")
+    # 损失函数: 标准 MSE
+    criterion = nn.MSELoss()
+    print("使用标准 MSE Loss")
 
-    # 优化器: Adam 是一个稳健的好选择
+    # 优化器
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     
     # 从配置读取学习率调度器参数
@@ -88,6 +77,7 @@ def train():
     # --- 4. 训练循环 ---
     best_val_loss = float('inf')
     epochs_no_improve = 0  # Early Stopping 计数器
+    mse_fn = nn.MSELoss(reduction='none')  # 用于计算逐参数 MSE
 
     for epoch in range(NUM_EPOCHS):
         # --- 训练阶段 ---
@@ -116,6 +106,8 @@ def train():
         # --- 验证阶段 ---
         model.eval()  # 将模型设为评估模式
         total_val_loss = 0
+        val_mse_per_param = torch.zeros(OUTPUT_SIZE).to(device)
+        val_sample_count = 0
         with torch.no_grad():  # 在验证时不需要计算梯度
             for X_batch_val, Y_batch_val in val_loader:
                 X_batch_val, Y_batch_val = X_batch_val.to(device), Y_batch_val.to(device)
@@ -123,20 +115,32 @@ def train():
                 Y_pred_val = model(X_batch_val)
                 val_loss = criterion(Y_pred_val, Y_batch_val)
                 total_val_loss += val_loss.item()
+                
+                # 累计逐参数 MSE
+                batch_mse = mse_fn(Y_pred_val, Y_batch_val)  # (batch, output_size)
+                val_mse_per_param += batch_mse.sum(dim=0)
+                val_sample_count += X_batch_val.shape[0]
 
         avg_val_loss = total_val_loss / len(val_loader)
-        scheduler.step(avg_val_loss)
+        avg_val_mse_per_param = (val_mse_per_param / val_sample_count).cpu().numpy()
+        avg_val_mse = avg_val_mse_per_param.mean()  # 纯 MSE 用于早停和调度
+        scheduler.step(avg_val_mse)
         # 获取当前的学习率
         current_lr = optimizer.param_groups[0]['lr']
         # 打印时带上当前的学习率
-        print(f"Epoch {epoch + 1:03d}/{NUM_EPOCHS} | Train Loss: {avg_train_loss:.6f} | Val Loss: {avg_val_loss:.6f} | LR: {current_lr:.8f}")
+        print(f"Epoch {epoch + 1:03d}/{NUM_EPOCHS} | Train Loss: {avg_train_loss:.6f} | Val MSE: {avg_val_mse:.6f} | LR: {current_lr:.8f}")
+        
+        # 每100轮打印逐参数 MSE
+        if (epoch + 1) % 100 == 0:
+            mse_str = ", ".join([f"{n}={v:.6f}" for n, v in zip(param_names, avg_val_mse_per_param)])
+            print(f"  [Per-Param MSE] {mse_str}")
 
-        # --- 保存最佳模型 + Early Stopping ---
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
+        # --- 保存最佳模型 + Early Stopping (基于纯 MSE) ---
+        if avg_val_mse < best_val_loss:
+            best_val_loss = avg_val_mse
             epochs_no_improve = 0
             torch.save(model.state_dict(), MODEL_SAVE_PATH)
-            print(f"  -> 新的最佳模型已保存到 {MODEL_SAVE_PATH} (Val Loss: {avg_val_loss:.6f})")
+            print(f"  -> 新的最佳模型已保存到 {MODEL_SAVE_PATH} (Val MSE: {avg_val_mse:.6f})")
         else:
             epochs_no_improve += 1
             if epochs_no_improve >= EARLY_STOPPING_PATIENCE:
@@ -153,6 +157,8 @@ def train():
     model.eval()
 
     total_test_loss = 0
+    test_mse_per_param = torch.zeros(OUTPUT_SIZE).to(device)
+    test_sample_count = 0
     with torch.no_grad():
         for X_batch_test, Y_batch_test in test_loader:
             X_batch_test, Y_batch_test = X_batch_test.to(device), Y_batch_test.to(device)
@@ -160,10 +166,20 @@ def train():
             Y_pred_test = model(X_batch_test)
             test_loss = criterion(Y_pred_test, Y_batch_test)
             total_test_loss += test_loss.item()
+            
+            batch_mse = mse_fn(Y_pred_test, Y_batch_test)
+            test_mse_per_param += batch_mse.sum(dim=0)
+            test_sample_count += X_batch_test.shape[0]
 
     avg_test_loss = total_test_loss / len(test_loader)
-    print(f"最终测试集上的平均损失 (MSE): {avg_test_loss:.6f}")
-    print("----------------------------------\n")
+    avg_test_mse_per_param = (test_mse_per_param / test_sample_count).cpu().numpy()
+    
+    print(f"\n{'='*60}")
+    print(f"  Test Loss (total): {avg_test_loss:.6f}")
+    print(f"  Per-Parameter MSE (scaled space):")
+    for name, mse_val in zip(param_names, avg_test_mse_per_param):
+        print(f"    {name:20s}: {mse_val:.6f}")
+    print(f"{'='*60}\n")
 
 
 if __name__ == "__main__":
