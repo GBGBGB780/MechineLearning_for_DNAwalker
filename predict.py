@@ -54,7 +54,7 @@ def load_real_experimental_data(config, data_path):
     # 对于实验数据存在的区域，用线性插值取近似值；
     # 对于空白区域（距离最近数据点超过阈值），直接置 NaN，
     # 后续在 inference.py 中归一化时空白处填 0（不提供任何信息给模型）。
-    GAP_THRESHOLD = 2.0  # 分钟。超过此距离视为空白（可根据实验数据间隔调整）
+    GAP_THRESHOLD = 5.0  # 分钟。超过此距离视为空白（可根据实验数据间隔调整）
 
     try:
         interp_fam_func = interp1d(exp_time, exp_fam, kind='linear', bounds_error=False, fill_value=np.nan)
