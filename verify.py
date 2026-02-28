@@ -28,14 +28,10 @@ def write_matlab_input(params_dict):
     try:
         with open(MATLAB_INPUT_FILE, 'w') as f:
             # 写入参数名和值
-            print("\n--- 写入 MATLAB 的参数 (Formatted) ---")
+            print("\n--- 写入 MATLAB 的参数 (Full Precision) ---")
             for name, value in params_dict.items():
-                if name == 'k0':
-                    # k0通常很小 (e-7)，且用户要求不要有e。使用 .10f 保留足够精度
-                    line = f"{name}={value:.10f}"
-                else:
-                    # 其他参数保留 3 位小数，且不使用科学计数法
-                    line = f"{name}={value:.3f}"
+                # 不缩减位数，完整写入
+                line = f"{name}={repr(value)}"
                 
                 f.write(line + "\n")
                 print(line)

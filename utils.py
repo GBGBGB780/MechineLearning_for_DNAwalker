@@ -120,20 +120,31 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
         return None, None, None, None
     # --- [修正结束] ---
 
-    # --- 预处理 X (输入): 逐通道逐样本归一化 ---
-    # 先还原为 (N, 3, 7801)，对每条曲线独立做 z-score，再展平
-    # 好处：保留 FAM/TYE/CY5 三条曲线之间的相对幅值信息
+    # --- 预处理 X (输入): 单样本联合通道归一化 (Domain Invariance) ---
+    # 先还原为 (N, 3, 7801)
+    # 我们不再使用全局归一化，因为实验环境数据的基准线和缩放可能会有偏差（Domain Shift）。
+    # 但我们也不能像最开始那样对每条曲线独立进行归一化，这会抹除 FAM、TYE、CY5 之间的相对高度差异（这决定了物理参数）。
+    # 解决方案：对“每个样本”计算它 三条曲线组合在一起 的总均值和总方差，然后整体缩放。
+    # 这样既不受全局环境基线飘移的影响，又能完美保留三条曲线互相之间的相对高度和距离。
     num_channels = X_data.shape[1]   # 3
     X_clean_3d = X_clean.reshape(-1, num_channels, X_data.shape[2])  # (N, 3, 7801)
-    for c in range(num_channels):
-        ch_mean = X_clean_3d[:, c, :].mean(axis=1, keepdims=True)   # (N, 1)
-        ch_std  = X_clean_3d[:, c, :].std(axis=1,  keepdims=True) + 1e-8
-        X_clean_3d[:, c, :] = (X_clean_3d[:, c, :] - ch_mean) / ch_std
+    
+    # 沿着通道(axis=1)和时间点(axis=2)一起计算
+    sample_means = np.nanmean(X_clean_3d, axis=(1, 2), keepdims=True)  # Shape: (N, 1, 1)
+    sample_stds  = np.nanstd(X_clean_3d, axis=(1, 2), keepdims=True) + 1e-8 # Shape: (N, 1, 1)
+    
+    # 执行归一化
+    X_clean_3d = (X_clean_3d - sample_means) / sample_stds
+        
     X_scaled = X_clean_3d.reshape(X_clean.shape[0], -1)  # 展平回 (N, 23403)
-    print(f"X 逐通道归一化: 全局 mean≈{X_scaled.mean():.4f}, std≈{X_scaled.std():.4f}")
+    print("X 单样本联合通道归一化完成 (Domain Invariant)。")
+    
+    # 填充所有的潜在的 NaN 以防止训练报错 (安全机制)
+    X_scaled = np.nan_to_num(X_scaled, nan=0.0)
 
     # --- 预处理 Y (标签) ---
-    y_scaler = MinMaxScaler()
+    # Safe Sigmoid Lock策略: 缩放到 [0.1, 0.9] 避免 Sigmoid 两端的梯度死区
+    y_scaler = MinMaxScaler(feature_range=(0.1, 0.9))
     Y_scaled = y_scaler.fit_transform(Y_clean)
 
     # --- 保存 scaler ---
@@ -143,10 +154,16 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
     if scaler_dir and not os.path.exists(scaler_dir):
         os.makedirs(scaler_dir, exist_ok=True)
     with open(x_scaler_file, 'wb') as f:
-        pickle.dump(None, f)   # x_scaler 已弃用，保存 None 占位
+        pickle.dump(None, f)   # 采用单样本联合归一化，不再依赖全局 X Scaler
     with open(y_scaler_file, 'wb') as f:
         pickle.dump(y_scaler, f)
-    print(f"y_scaler 已保存: {y_scaler_file}  (x_scaler 已弃用)")
+    print(f"Scalers 已保存: {x_scaler_file} 和 {y_scaler_file}")
+
+    # --- 数据格式转换以节省内存 ---
+    # 将 float64 转为 float32：内存占用减半，防止 train_test_split 时报 OOM 错误
+    # PyTorch 默认使用的也是 float32，不影响精度
+    X_scaled = X_scaled.astype(np.float32)
+    Y_scaled = Y_scaled.astype(np.float32)
 
     # --- 拆分数据集 ---
     # 从config读取拆分比例和随机种子

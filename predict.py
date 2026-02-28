@@ -57,9 +57,10 @@ def load_real_experimental_data(config, data_path):
     GAP_THRESHOLD = 5.0  # 分钟。超过此距离视为空白（可根据实验数据间隔调整）
 
     try:
-        interp_fam_func = interp1d(exp_time, exp_fam, kind='linear', bounds_error=False, fill_value=np.nan)
-        interp_tye_func = interp1d(exp_time, exp_tye, kind='linear', bounds_error=False, fill_value=np.nan)
-        interp_cy5_func = interp1d(exp_time, exp_cy5, kind='linear', bounds_error=False, fill_value=np.nan)
+        # 使用常量延展边界以避免边缘点因不在测试时间范围内而变成 NaN，并在实验数据的空白段(如UV)采用内部线性插值。
+        interp_fam_func = interp1d(exp_time, exp_fam, kind='linear', bounds_error=False, fill_value=(exp_fam[0], exp_fam[-1]))
+        interp_tye_func = interp1d(exp_time, exp_tye, kind='linear', bounds_error=False, fill_value=(exp_tye[0], exp_tye[-1]))
+        interp_cy5_func = interp1d(exp_time, exp_cy5, kind='linear', bounds_error=False, fill_value=(exp_cy5[0], exp_cy5[-1]))
 
         curve_fam = interp_fam_func(standard_time_axis)
         curve_tye = interp_tye_func(standard_time_axis)
@@ -68,21 +69,13 @@ def load_real_experimental_data(config, data_path):
         print(f"错误: 无法映射数据。错误信息: {e}")
         return None
 
-    # 检测空白区域：对每个标准时间点，找最近的实验时间点距离
-    # 若距离超过 GAP_THRESHOLD，视为空白，置 NaN
-    nearest_dist = np.min(np.abs(standard_time_axis[:, None] - exp_time[None, :]), axis=1)
-    gap_mask = nearest_dist > GAP_THRESHOLD
-    n_gaps = gap_mask.sum()
-    if n_gaps > 0:
-        print(f"  检测到 {n_gaps} 个时间点在空白区域（距最近数据点 > {GAP_THRESHOLD} min），已置 NaN")
-        curve_fam[gap_mask] = np.nan
-        curve_tye[gap_mask] = np.nan
-        curve_cy5[gap_mask] = np.nan
+    # 由于使用了线性插值填充了原本数据采集中断(如UV)的区间，
+    # 时序特征现在是平滑连续的，这消除了原本替换 NaN 为 0.0 时引发的巨大阶跃突变。
+    # 这一修正能确保 CNN 的 MaxPool 层不会被虚假的人工尖峰干扰。
 
     # --- g. 组合并返回 ---
     X_sample_raw = np.stack([curve_fam, curve_tye, curve_cy5], axis=0)  # (3, T)
-    valid_pct = 100 * (1 - n_gaps / len(standard_time_axis))
-    print(f"实验数据加载完成: (3, {num_time_points}), 有效时间点占比 {valid_pct:.1f}%")
+    print(f"实验数据加载完成: (3, {num_time_points}), 所有空白时段已无缝线性插值连续化。")
     return X_sample_raw
 
 

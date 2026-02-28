@@ -46,7 +46,7 @@ class NanorobotPredictor:
         self.y_scaler_path = self.config.get_y_scaler_file()
         
         # 3. Load Scalers
-        # x_scaler 已弃用（改为逐通道逐样本归一化），只需加载 y_scaler
+        # x_scaler 不再包含全局均值方差，采用单样本联合计算
         self.y_scaler = self._load_pickle(self.y_scaler_path, "Y Scaler")
         
         # 4. Load Model
@@ -103,16 +103,18 @@ class NanorobotPredictor:
         if X_flat.shape[1] != expected_size:
             raise ValueError(f"Input data dimension mismatch. Expected {expected_size} features, got {X_flat.shape[1]}.")
 
-        # 2. 逐通道逐样本归一化 — 与 utils.py 训练时完全一致
-        # 还原为 (N, 3, seq_len) → 每条曲线独立 z-score → 展平
+        # 2. 单样本联合通道归一化 (Domain Invariance) — 与 utils.py 完全一致
+        # 我们把 FAM, TYE, CY5 拼在一起计算这一个样本的总均值和总方差进行缩放。
+        # 不使用全局均值，从而避免实验环境系统误差导致的整体验移对模型产生的误导。
         num_channels = self.config.get_num_curves()  # 3
         seq_len = self.input_size // num_channels     # 7801
         X_3d = X_flat.reshape(-1, num_channels, seq_len)
-        for c in range(num_channels):
-            ch = X_3d[:, c, :]                                        # (N, seq_len)
-            ch_mean = np.nanmean(ch, axis=1, keepdims=True)
-            ch_std  = np.nanstd(ch,  axis=1, keepdims=True) + 1e-8
-            X_3d[:, c, :] = (ch - ch_mean) / ch_std
+        
+        # 沿着通道(axis=1)和时间点(axis=2)一起计算，保留各个曲线之间的绝对高度关系
+        sample_means = np.nanmean(X_3d, axis=(1, 2), keepdims=True)  # Shape: (N, 1, 1)
+        sample_stds  = np.nanstd(X_3d, axis=(1, 2), keepdims=True) + 1e-8 # Shape: (N, 1, 1)
+        
+        X_3d = (X_3d - sample_means) / sample_stds
         # 空白区域（NaN）填 0：z-score 空间的均值，不提供任何信息
         X_3d = np.where(np.isnan(X_3d), 0.0, X_3d)
         X_scaled = X_3d.reshape(X_flat.shape[0], -1)  # 展平回 (N, 23403)

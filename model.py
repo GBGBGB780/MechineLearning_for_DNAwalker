@@ -66,20 +66,22 @@ class InverseCNN(nn.Module):
                      kernel_size=conv4['kernel_size'], stride=conv4['stride'], padding=conv4['padding']),
             nn.BatchNorm1d(conv4['out_channels']),
             nn.ReLU(),
-            nn.AdaptiveAvgPool1d(1) # 全局平均池化，强制压缩成核心特征
+            nn.AdaptiveMaxPool1d(16) # 保留时间维度的信息 (16个关键特征点)
         )
         
         # --- 回归预测层 (Regressor) ---
         # 256 → 256 → ReLU+Dropout → 128 → ReLU+Dropout → 7
+        # Safe Sigmoid Lock: 输出限制在 (0,1)，同时目标被映射到 [0.1, 0.9]
         self.regressor = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(conv4['out_channels'], conv4['out_channels']),  # 256→256
+            nn.Linear(conv4['out_channels'] * 16, conv4['out_channels']),  # 例如 256*16→256
             nn.ReLU(),
             nn.Dropout(dropout_fc),
             nn.Linear(conv4['out_channels'], fc1_features),           # 256→128
             nn.ReLU(),
             nn.Dropout(dropout_fc),
-            nn.Linear(fc1_features, output_size)                      # 128→7
+            nn.Linear(fc1_features, output_size),                     # 128→7
+            nn.Sigmoid()                                              # Safe Sigmoid Lock
         )
 
     def forward(self, x):
