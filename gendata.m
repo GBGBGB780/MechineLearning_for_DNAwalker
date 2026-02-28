@@ -25,8 +25,8 @@ disp('开始生成数据集...');
 tic; % 开始计时
 
 % --- 从您的需求中定义 ---
-target_num_samples = 15000;      % 目标合格样本总数
-initial_sample_ratio = 3.0;       % 初始采样冗余比例（生成3倍样本以应对质量过滤）
+target_num_samples = 30000;      % 目标合格样本总数
+initial_sample_ratio = 1.7;       % 初始采样冗余比例（生成3倍样本以应对质量过滤）
 num_samples = round(target_num_samples * initial_sample_ratio);  % 初始生成样本数
 
 simu_time = 130;    % 模拟时间为130min
@@ -37,7 +37,7 @@ if exist(output_filename, 'file')
 end
 
 % --- 内存优化配置 ---
-MAX_BATCH_SIZE = 10000; % 每批次最大样本数，防止内存溢出
+MAX_BATCH_SIZE = 6000; % 每批次最大样本数，防止内存溢出
 
 fprintf('=== 数据集生成配置 ===\n');
 fprintf('目标合格样本数: %d\n', target_num_samples);
@@ -58,25 +58,26 @@ param_names = {
 };
 
 % 对应的最小值范围 (与 configfile.ini [TRAINING_PARAMETER_RANGES] 保持同步)
+% 缩紧策略：参考值分别为 -1.2, -1.0, -0.1, 0.05, 8e-6, 0.5, 0.05
 min_vals = [
-    -1.8,    % E_b:           参考值-1.2 kBT, 菜節和[-1.8, -0.7]
-    -1.6,    % E_b_azo_trans: 参考值-1.0 kBT, 范围[-1.6, -0.5]
-    -0.35,   % E_b_azo_cis:   参考值-0.1 kBT, cis构型接近0, 范围[-0.35, -0.01]
-    0.01,    % k_mig:         参考值0.05, 范围[0.01, 0.20]
-    2e-6,    % k0:            参考值8e-6, 范围[2e-6, 6e-5]
-    0.15,    % drt_z:         参考值0.5, 范围[0.15, 0.90]
-    0.001    % drt_s:         参考值0.05, 范围[0.001, 0.20]
+    -1.5,    % E_b:           参考值-1.2 kBT, 缩紧至[-1.5, -0.9]
+    -1.3,    % E_b_azo_trans: 参考值-1.0 kBT, 缩紧至[-1.3, -0.7]
+    -0.20,   % E_b_azo_cis:   参考值-0.1 kBT, cis构型接近0, 缩紧至[-0.20, -0.02]
+    0.02,    % k_mig:         参考值0.05, 缩紧至[0.02, 0.12]
+    3e-6,    % k0:            参考值8e-6, 缩紧至[3e-6, 3e-5]
+    0.25,    % drt_z:         参考值0.5, 缩紧至[0.25, 0.75]
+    0.01     % drt_s:         参考值0.05, 缩紧至[0.01, 0.12]
 ];
 
 % 对应的最大值范围
 max_vals = [
-    -0.7,    % E_b
-    -0.5,    % E_b_azo_trans
-    -0.01,   % E_b_azo_cis
-    0.20,    % k_mig
-    6e-5,    % k0
-    0.90,    % drt_z
-    0.20     % drt_s
+    -0.9,    % E_b
+    -0.7,    % E_b_azo_trans
+    -0.02,   % E_b_azo_cis
+    0.12,    % k_mig
+    3e-5,    % k0
+    0.75,    % drt_z
+    0.12     % drt_s
 ];
 min_vals = min_vals(:).';
 max_vals = max_vals(:).';
@@ -236,7 +237,7 @@ disp('  param_names (标签): [1, 7] (参数名称)');
 fprintf('\n数据质量保证:\n');
 fprintf('  ✓ 所有样本均无 NaN/Inf 值\n');
 fprintf('  ✓ FAM 曲线变化 ≥ 0.02\n');
-fprintf('  ✓ TYE 曲线变化 ≥ 0.6\n');
+fprintf('  ✓ TYE 曲线变化 ≥ 0.06\n');
 fprintf('  ✓ CY5 曲线变化 ≥ 0.02\n');
 disp('----------------------------------------------------');
 disp('模拟完成, 即将退出。');
@@ -377,9 +378,9 @@ function [is_valid, reason] = validate_single_sample(fam, tye, cy5, dt_this, min
         if fam_change <= 0.02
             is_valid = false;
             reason = 'FAM change <= 0.02';
-        elseif tye_change <= 0.6
+        elseif tye_change <= 0.06
             is_valid = false;
-            reason = 'TYE change <= 0.6';
+            reason = 'TYE change <= 0.06';
         elseif cy5_change <= 0.02
             is_valid = false;
             reason = 'CY5 change <= 0.02';
