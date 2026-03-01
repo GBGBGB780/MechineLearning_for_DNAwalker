@@ -148,16 +148,14 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
     Y_scaled = y_scaler.fit_transform(Y_clean)
 
     # --- 保存 scaler ---
-    x_scaler_file = config.get_x_scaler_file()
+    # X 采用单样本联合通道归一化（运行时计算），无需保存全局 x_scaler
     y_scaler_file = config.get_y_scaler_file()
     scaler_dir = os.path.dirname(y_scaler_file)
     if scaler_dir and not os.path.exists(scaler_dir):
         os.makedirs(scaler_dir, exist_ok=True)
-    with open(x_scaler_file, 'wb') as f:
-        pickle.dump(None, f)   # 采用单样本联合归一化，不再依赖全局 X Scaler
     with open(y_scaler_file, 'wb') as f:
         pickle.dump(y_scaler, f)
-    print(f"Scalers 已保存: {x_scaler_file} 和 {y_scaler_file}")
+    print(f"Y Scaler 已保存: {y_scaler_file}")
 
     # --- 数据格式转换以节省内存 ---
     # 将 float64 转为 float32：内存占用减半，防止 train_test_split 时报 OOM 错误

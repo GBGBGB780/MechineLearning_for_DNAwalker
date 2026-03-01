@@ -195,8 +195,13 @@ def predict_parameters():
         seq_len = input_size // num_channels
 
         X_flat = X_sample_raw.reshape(1, -1).astype(np.float32)
-        X_scaled_inp = predictor.x_scaler.transform(X_flat)
-        X_scaled_inp = np.nan_to_num(X_scaled_inp, nan=0.0)
+        # 单样本联合通道归一化（与 utils.py 训练时完全一致，不依赖 x_scaler）
+        X_3d = X_flat.reshape(1, num_channels, seq_len)
+        sample_mean = np.nanmean(X_3d, axis=(1, 2), keepdims=True)
+        sample_std  = np.nanstd(X_3d,  axis=(1, 2), keepdims=True) + 1e-8
+        X_3d = (X_3d - sample_mean) / sample_std
+        X_3d = np.where(np.isnan(X_3d), 0.0, X_3d)
+        X_scaled_inp = X_3d.reshape(1, -1)
         X_tensor = torch.tensor(X_scaled_inp, dtype=torch.float32).to(predictor.device)
 
         with torch.no_grad():

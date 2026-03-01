@@ -46,7 +46,7 @@ class NanorobotPredictor:
         self.y_scaler_path = self.config.get_y_scaler_file()
         
         # 3. Load Scalers
-        # x_scaler 不再包含全局均值方差，采用单样本联合计算
+        # X 采用单样本联合通道归一化（运行时计算），不依赖全局 x_scaler
         self.y_scaler = self._load_pickle(self.y_scaler_path, "Y Scaler")
         
         # 4. Load Model
