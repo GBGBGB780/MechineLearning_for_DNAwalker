@@ -1,15 +1,15 @@
 # 核心深度学习框架
-torch
+torch>=2.5.1
 
 # 科学计算与数据处理
-numpy
-pandas
-scipy
-scikit-learn
+numpy>=2.0.2      # 需要 2.x：y_scaler.pkl 用 numpy 2.x 格式保存，1.x 无法加载
+pandas>=3.0.1
+scipy>=1.17.1
+scikit-learn>=1.7.2
 
 # 数据可视化 (用于 .ipynb 或检查脚本)
-matplotlib
-umap-learn
+matplotlib>=3.7.1
+umap-learn>=0.5.9
 
 # pandas 依赖 (用于读写 Excel .xlsx 文件)
-openpyxl
+openpyxl>=3.1.5
