@@ -185,11 +185,9 @@ def predict_parameters():
         print("无法处理输入数据，预测中止。")
         return
 
-    # --- 3. DL 预测（返回归一化空间的输出，用于 Nelder-Mead）---
-    print("\n--- 2. 正在执行 DL 模型预测 ---")
+    # --- 3. DL 预测（Test-Time Ensemble，取中位数）---
+    print("\n--- 2. 正在执行 DL 模型预测（Test-Time Ensemble）---")
     try:
-        # 先获取归一化空间的原始输出（Sigmoid 输出，范围 [0.1, 0.9]）
-        # 需要临时在 inference 层获取此值
         num_channels = predictor.config.get_num_curves()
         input_size = predictor.input_size
         seq_len = input_size // num_channels
@@ -201,13 +199,34 @@ def predict_parameters():
         sample_std  = np.nanstd(X_3d,  axis=(1, 2), keepdims=True) + 1e-8
         X_3d = (X_3d - sample_mean) / sample_std
         X_3d = np.where(np.isnan(X_3d), 0.0, X_3d)
-        X_scaled_inp = X_3d.reshape(1, -1)
-        X_tensor = torch.tensor(X_scaled_inp, dtype=torch.float32).to(predictor.device)
+        X_scaled_inp = X_3d.reshape(1, -1)  # shape: (1, 23403)
 
+        # --- Test-Time Ensemble ---
+        # 对归一化后的输入施加 N 次小幅高斯扰动，分别预测，取中位数。
+        # 中位数比均值更鲁棒，能过滤模型在输入边界处的偶然离群预测。
+        N_ENSEMBLE = 50
+        NOISE_STD  = 0.005  # 相对于归一化空间（均值0,方差1）的极小扰动
+        np.random.seed(42)
+
+        ensemble_preds = []
         with torch.no_grad():
-            predicted_scaled_raw = predictor.model(X_tensor).cpu().numpy()[0]  # shape: (7,)
+            # 第0次: 使用原始干净输入（无噪声）
+            X_tensor = torch.tensor(X_scaled_inp, dtype=torch.float32).to(predictor.device)
+            ensemble_preds.append(predictor.model(X_tensor).cpu().numpy()[0])
 
-        print(f"  DL 输出（归一化空间）: {predicted_scaled_raw}")
+            # 第1~N-1次: 加噪声后预测
+            for _ in range(N_ENSEMBLE - 1):
+                noise = np.random.normal(0, NOISE_STD, X_scaled_inp.shape).astype(np.float32)
+                X_noisy = torch.tensor(X_scaled_inp + noise, dtype=torch.float32).to(predictor.device)
+                ensemble_preds.append(predictor.model(X_noisy).cpu().numpy()[0])
+
+        ensemble_preds = np.array(ensemble_preds)  # shape: (N_ENSEMBLE, 7)
+        predicted_scaled_raw = np.median(ensemble_preds, axis=0)  # shape: (7,)
+
+        # 打印集成统计信息，帮助判断预测稳定性（std越小越好）
+        ensemble_std = np.std(ensemble_preds, axis=0)
+        print(f"  集成预测（中位数，N={N_ENSEMBLE}）: {predicted_scaled_raw}")
+        print(f"  集成标准差（越小越稳定）:           {np.round(ensemble_std, 5)}")
     except Exception as e:
         print(f"DL 预测出错: {e}")
         return
