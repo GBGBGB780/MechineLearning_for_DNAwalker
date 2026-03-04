@@ -3,6 +3,7 @@ import numpy as np
 import pickle
 import torch
 import os
+import gc
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
@@ -25,12 +26,12 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
     # 从配置读取参数名称
     param_names = config.get_trainable_param_names()
     print(f"从配置文件读取到 {len(param_names)} 个待训练参数: {param_names}")
-    # --- 加载数据 ---
     try:
-        dataset = np.load(npz_filename)
-        X_data = dataset['X']
-        Y_data = dataset['Y']
-        print(f"成功加载 {npz_filename}。")
+        with np.load(npz_filename) as dataset:
+            # 立即转为 float32 (占用内存减半)，且离开 with 块后销毁原 dataset 连接
+            X_data = dataset['X'].astype(np.float32)
+            Y_data = dataset['Y'].astype(np.float32)
+        print(f"成功加载 {npz_filename} (已转为 float32)。")
         print(f"原始 X 形状: {X_data.shape}, 原始 Y 形状: {Y_data.shape}")
     except Exception as e:
         print(f"错误: 无法加载 {npz_filename}。请确保文件存在且未损坏。")
@@ -92,13 +93,16 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
     # np.abs(X_flat) < safe_threshold 会自动处理 Inf (返回 False)
     # 但我们仍然需要 np.nan_to_num 来处理 NaN，以防万一
 
-    # (更简单的方法) 先替换 NaN，再检查阈值
-    X_flat_no_nan = np.nan_to_num(X_flat, nan=nan_replacement)
-    Y_data_no_nan = np.nan_to_num(Y_data, nan=nan_replacement)
+    # (更简单的方法) 直接原地去掉 NaN 和 Inf，避免生成和 X_flat 一样大的全尺寸副本 (节省 >1GB)
+    np.nan_to_num(X_flat, nan=nan_replacement, posinf=nan_replacement, neginf=nan_replacement, copy=False)
+    np.nan_to_num(Y_data, nan=nan_replacement, posinf=nan_replacement, neginf=nan_replacement, copy=False)
 
     # 检查 X 和 Y 中的所有值是否都在安全范围内
-    mask_x_good = (np.abs(X_flat_no_nan) < safe_threshold).all(axis=1)
-    mask_y_good = (np.abs(Y_data_no_nan) < safe_threshold).all(axis=1)
+    # 由于已经过滤，np.abs() 并判断 <阈值 生成的布尔矩阵还是很大(357MB)，
+    # 我们改用逐行的 .max() 与 .min() 检查，大幅降低布尔矩阵瞬时体积
+    limit = safe_threshold
+    mask_x_good = (np.max(X_flat, axis=1) < limit) & (np.min(X_flat, axis=1) > -limit)
+    mask_y_good = (np.max(Y_data, axis=1) < limit) & (np.min(Y_data, axis=1) > -limit)
 
     # 我们只保留 X 和 Y *都* 完好的行
     final_mask = mask_x_good & mask_y_good
@@ -110,8 +114,11 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
         print(f"警告: 发现并跳过了 {num_bad} 个“坏”样本 (包含 Inf, NaN 或极端值)。")
 
     # 应用掩码
-    X_clean = X_flat[final_mask]
-    Y_clean = Y_data[final_mask]
+    X_clean = X_flat[final_mask].copy() # 拷贝下确定的量
+    Y_clean = Y_data[final_mask].copy()
+    
+    del X_data, X_flat, Y_data, mask_x_good, mask_y_good, final_mask
+    gc.collect()
 
     print(f"清理后的 X 形状: {X_clean.shape}, 清理后的 Y 形状: {Y_clean.shape}")
 
@@ -126,8 +133,9 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
     # 但我们也不能像最开始那样对每条曲线独立进行归一化，这会抹除 FAM、TYE、CY5 之间的相对高度差异（这决定了物理参数）。
     # 解决方案：对“每个样本”计算它 三条曲线组合在一起 的总均值和总方差，然后整体缩放。
     # 这样既不受全局环境基线飘移的影响，又能完美保留三条曲线互相之间的相对高度和距离。
-    num_channels = X_data.shape[1]   # 3
-    X_clean_3d = X_clean.reshape(-1, num_channels, X_data.shape[2])  # (N, 3, 7801)
+    num_channels = config.get_num_curves()
+    seq_len = config.get_seq_length()
+    X_clean_3d = X_clean.reshape(-1, num_channels, seq_len)  # (N, 3, 7801)
     
     # 沿着通道(axis=1)和时间点(axis=2)一起计算
     sample_means = np.nanmean(X_clean_3d, axis=(1, 2), keepdims=True)  # Shape: (N, 1, 1)
@@ -139,8 +147,8 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
     X_scaled = X_clean_3d.reshape(X_clean.shape[0], -1)  # 展平回 (N, 23403)
     print("X 单样本联合通道归一化完成 (Domain Invariant)。")
     
-    # 填充所有的潜在的 NaN 以防止训练报错 (安全机制)
-    X_scaled = np.nan_to_num(X_scaled, nan=0.0)
+    # 填充所有的潜在的 NaN 以防止训练报错 (安全机制)，使用 copy=False 进行原地操作以节省内存
+    np.nan_to_num(X_scaled, nan=0.0, copy=False)
 
     # --- 预处理 Y (标签) ---
     # Safe Sigmoid Lock策略: 缩放到 [0.1, 0.9] 避免 Sigmoid 两端的梯度死区
@@ -180,13 +188,19 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
     print(f"验证集大小: {X_val.shape[0]}")
     print(f"测试集大小: {X_test.shape[0]}")
 
+    # --- [重要优化] 释放中间大数组内存 ---
+    # train_test_split 产生了副本，现在清理原件以腾出空间给 PyTorch Tensors
+    del X_scaled, X_train_val, Y_scaled, Y_train_val
+    gc.collect()
+
     # --- 转换为 PyTorch Tensors ---
-    X_train_t = torch.tensor(X_train, dtype=torch.float32)
-    Y_train_t = torch.tensor(Y_train, dtype=torch.float32)
-    X_val_t = torch.tensor(X_val, dtype=torch.float32)
-    Y_val_t = torch.tensor(Y_val, dtype=torch.float32)
-    X_test_t = torch.tensor(X_test, dtype=torch.float32)
-    Y_test_t = torch.tensor(Y_test, dtype=torch.float32)
+    # 使用 from_numpy 而不是 tensor()。tensor() 会创建数据副本，而 from_numpy 共享内存。
+    X_train_t = torch.from_numpy(X_train)
+    Y_train_t = torch.from_numpy(Y_train)
+    X_val_t = torch.from_numpy(X_val)
+    Y_val_t = torch.from_numpy(Y_val)
+    X_test_t = torch.from_numpy(X_test)
+    Y_test_t = torch.from_numpy(Y_test)
 
     # --- 创建 DataLoaders ---
     train_dataset = TensorDataset(X_train_t, Y_train_t)
