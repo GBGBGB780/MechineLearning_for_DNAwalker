@@ -58,9 +58,23 @@ def train():
     # 传递config给模型，让模型从配置文件读取结构参数
     model = InverseCNN(INPUT_SIZE, OUTPUT_SIZE, config).to(device)
 
-    # 损失函数: 标准 MSE
-    criterion = nn.MSELoss()
-    print("使用标准 MSE Loss")
+    # -------------------------------------------------------------
+    # 损失函数: 自适应加权 MSE (Adaptive Loss Weighting)
+    # -------------------------------------------------------------
+    # 初始等权重，随后根据模型学习中不同参数的相对 MSE 损失自适应调整，
+    # 当某个参数损失过大说明在这个参数上拟合差，进而加宽惩罚宽度并提权逼退它拟合，
+    # 反之缩小这个权重为正常，实现“各学科均衡发展不偏科”。
+    initial_weights = [1.0] * OUTPUT_SIZE
+    param_weights = torch.tensor(initial_weights, dtype=torch.float32, device=device)
+    
+    # 获取参数名称以便打印
+    param_names = config.get_trainable_param_names()
+    
+    def weighted_mse_loss(pred, target):
+        return torch.mean(param_weights * (pred - target) ** 2)
+
+    criterion = weighted_mse_loss
+    print("使用 自适应加权MSE Loss (Adaptive Loss Weighting)")
 
     # 优化器
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
@@ -125,15 +139,28 @@ def train():
         avg_val_mse_per_param = (val_mse_per_param / val_sample_count).cpu().numpy()
         avg_val_mse = avg_val_mse_per_param.mean()  # 纯 MSE 用于早停和调度
         scheduler.step(avg_val_mse)
+        
+        # --- [新增] 自适应损失加权 (Adaptive Loss Weighting) ---
+        # 根据本轮验证集各参数的 MSE，动态调整下一轮训练的权重
+        # 哪个参数预测得最差（MSE最大），谁的权重就越高，自动平衡！
+        # 加上一个小常数 (1e-6) 避免除零，并开平方根平滑一下极限差异
+        raw_weights = np.sqrt(avg_val_mse_per_param + 1e-6)
+        # 将权重归一化，使其均值为 1.0 (保持整体 learning rate 不变)
+        normalized_weights = raw_weights / raw_weights.mean()
+        # 平滑更新 (EMA)，避免权重在一轮之间剧烈震荡 (0.1 更新率)
+        new_weights_tensor = torch.tensor(normalized_weights, dtype=torch.float32).to(device)
+        param_weights = 0.9 * param_weights + 0.1 * new_weights_tensor
         # 获取当前的学习率
         current_lr = optimizer.param_groups[0]['lr']
         # 打印时带上当前的学习率
         print(f"Epoch {epoch + 1:03d}/{NUM_EPOCHS} | Train Loss: {avg_train_loss:.6f} | Val MSE: {avg_val_mse:.6f} | LR: {current_lr:.8f}")
         
-        # 每100轮打印逐参数 MSE
+        # 每100轮打印逐参数 MSE 和 当前参数权重
         if (epoch + 1) % 100 == 0:
             mse_str = ", ".join([f"{n}={v:.6f}" for n, v in zip(param_names, avg_val_mse_per_param)])
+            weight_str = ", ".join([f"{n}={v:.3f}" for n, v in zip(param_names, param_weights.cpu().numpy())])
             print(f"  [Per-Param MSE] {mse_str}")
+            print(f"  [Current Weights] {weight_str}")
 
         # --- 保存最佳模型 + Early Stopping (基于纯 MSE) ---
         if avg_val_mse < best_val_loss:
