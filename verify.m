@@ -770,9 +770,19 @@ if exist(exp_data_file, 'file')
     sim_tye = result_signal(:, 3);   % TYE 模拟结果
     sim_cy5 = result_signal(:, 4);   % CY5 模拟结果
     
+    % 先计算 RMSE，以便嵌入图标题
+    exp_fam_interp = interp1(exp_time, exp_fam, sim_time, 'linear', 'extrap');
+    exp_tye_interp = interp1(exp_time, exp_tye, sim_time, 'linear', 'extrap');
+    exp_cy5_interp = interp1(exp_time, exp_cy5, sim_time, 'linear', 'extrap');
+
+    rmse_fam   = sqrt(mean((sim_fam - exp_fam_interp).^2, 'omitnan'));
+    rmse_tye   = sqrt(mean((sim_tye - exp_tye_interp).^2, 'omitnan'));
+    rmse_cy5   = sqrt(mean((sim_cy5 - exp_cy5_interp).^2, 'omitnan'));
+    rmse_total = (rmse_fam + rmse_tye + rmse_cy5) / 3;
+
     % 创建对比图
     figure('Position', [100, 100, 1200, 800]);
-    
+
     % 绘制 FAM 对比
     subplot(3, 1, 1);
     plot(sim_time, sim_fam, 'r-', 'LineWidth', 2, 'DisplayName', 'Simulation');
@@ -780,11 +790,11 @@ if exist(exp_data_file, 'file')
     scatter(exp_time, exp_fam, 20, 'b', 'filled', 'MarkerFaceAlpha', 0.3, 'DisplayName', 'Experimental');
     xlabel('Time (min)', 'FontSize', 12);
     ylabel('FAM Signal', 'FontSize', 12);
-    title('FAM: Simulation vs Experimental Data', 'FontSize', 14, 'FontWeight', 'bold');
+    title(sprintf('FAM: Simulation vs Experimental  (RMSE=%.4f)', rmse_fam), 'FontSize', 14, 'FontWeight', 'bold');
     legend('Location', 'best', 'FontSize', 10);
     grid on;
     hold off;
-    
+
     % 绘制 TYE 对比
     subplot(3, 1, 2);
     plot(sim_time, sim_tye, 'r-', 'LineWidth', 2, 'DisplayName', 'Simulation');
@@ -792,11 +802,11 @@ if exist(exp_data_file, 'file')
     scatter(exp_time, exp_tye, 20, 'b', 'filled', 'MarkerFaceAlpha', 0.3, 'DisplayName', 'Experimental');
     xlabel('Time (min)', 'FontSize', 12);
     ylabel('TYE Signal', 'FontSize', 12);
-    title('TYE: Simulation vs Experimental Data', 'FontSize', 14, 'FontWeight', 'bold');
+    title(sprintf('TYE: Simulation vs Experimental  (RMSE=%.4f)', rmse_tye), 'FontSize', 14, 'FontWeight', 'bold');
     legend('Location', 'best', 'FontSize', 10);
     grid on;
     hold off;
-    
+
     % 绘制 CY5 对比
     subplot(3, 1, 3);
     plot(sim_time, sim_cy5, 'r-', 'LineWidth', 2, 'DisplayName', 'Simulation');
@@ -804,11 +814,11 @@ if exist(exp_data_file, 'file')
     scatter(exp_time, exp_cy5, 20, 'b', 'filled', 'MarkerFaceAlpha', 0.3, 'DisplayName', 'Experimental');
     xlabel('Time (min)', 'FontSize', 12);
     ylabel('CY5 Signal', 'FontSize', 12);
-    title('CY5: Simulation vs Experimental Data', 'FontSize', 14, 'FontWeight', 'bold');
+    title(sprintf('CY5: Simulation vs Experimental  (RMSE=%.4f)', rmse_cy5), 'FontSize', 14, 'FontWeight', 'bold');
     legend('Location', 'best', 'FontSize', 10);
     grid on;
     hold off;
-    
+
     % 保存图片
     saveas(gcf, 'simulation_vs_experimental.png');
     saveas(gcf, 'simulation_vs_experimental.fig');
@@ -821,9 +831,9 @@ if exist(exp_data_file, 'file')
     exp_tye_interp = interp1(exp_time, exp_tye, sim_time, 'linear', 'extrap');
     exp_cy5_interp = interp1(exp_time, exp_cy5, sim_time, 'linear', 'extrap');
     
-    rmse_fam = sqrt(mean((sim_fam - exp_fam_interp).^2));
-    rmse_tye = sqrt(mean((sim_tye - exp_tye_interp).^2));
-    rmse_cy5 = sqrt(mean((sim_cy5 - exp_cy5_interp).^2));
+    rmse_fam = sqrt(mean((sim_fam - exp_fam_interp).^2, 'omitnan'));
+    rmse_tye = sqrt(mean((sim_tye - exp_tye_interp).^2, 'omitnan'));
+    rmse_cy5 = sqrt(mean((sim_cy5 - exp_cy5_interp).^2, 'omitnan'));
     rmse_total = (rmse_fam + rmse_tye + rmse_cy5) / 3;
     
     fprintf('\n=== 拟合误差分析 (RMSE) ===\n');
