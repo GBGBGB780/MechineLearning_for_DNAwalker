@@ -20,7 +20,7 @@ def stretch_y_data(input_path, output_path):
     for col in columns_to_stretch:
         if col in df.columns:
             start_val = df[col].iloc[0]
-            print(f"正在处理 {col}: 起始值 = {start_val:.4f}, 结束值从 {df[col].iloc[-1]:.4f} 变为...", end="")
+            print(f"正在处理 {col}: 起始值 = {start_val:.4f}, 结束值从 {df[col].iloc[-1]:.4f} 变为..", end="")
             df[col] = start_val + 2 * (df[col] - start_val)
             print(f" {df[col].iloc[-1]:.4f} (拉长2倍)")
         else:
