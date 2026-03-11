@@ -26,7 +26,7 @@ tic; % 开始计时
 
 % --- 从您的需求中定义 ---
 target_num_samples = 30000;      % 目标合格样本总数
-initial_sample_ratio = 1.7;       % 初始采样冗余比例（生成3倍样本以应对质量过滤）
+initial_sample_ratio = 1.1;       % 初始采样冗余比例（生成3倍样本以应对质量过滤）
 num_samples = round(target_num_samples * initial_sample_ratio);  % 初始生成样本数
 
 simu_time = 130;    % 模拟时间为130min
@@ -62,24 +62,24 @@ param_names = {
 % ref: -1.2, -1.0, -0.1, 0.05, 8e-6, 0.5, 0.05
 % pred:-1.24,-1.075,-0.101,0.067,3.6e-6,0.663,0.054
 min_vals = [
-    -1.4,    % E_b:           ref=-1.2, pred=-1.24, 收紧至[-1.4, -1.0]
-    -1.2,    % E_b_azo_trans: ref=-1.0, pred=-1.075,收紧至[-1.2, -0.8]
-    -0.18,   % E_b_azo_cis:   ref=-0.1, pred=-0.101,收紧至[-0.18,-0.03]
-    0.03,    % k_mig:         ref=0.05, pred=0.067,  收紧至[0.03, 0.10]
-    2e-6,    % k0:            ref=8e-6, pred=3.6e-6, 收紧至[2e-6, 2e-5]
-    0.35,    % drt_z:         ref=0.5,  pred=0.663,  收紧至[0.35, 0.75]
-    0.02     % drt_s:         ref=0.05, pred=0.054,  收紧至[0.02, 0.10]
+    -2.0,    % E_b:           
+    -2.0,    % E_b_azo_trans: 
+    -0.5,    % E_b_azo_cis:   
+    0.01,    % k_mig:         
+    1e-7,    % k0:            
+    0.20,    % drt_z:         
+    0.01     % drt_s:         
 ];
 
 % 对应的最大值范围
 max_vals = [
-    -1.0,    % E_b
-    -0.8,    % E_b_azo_trans
-    -0.03,   % E_b_azo_cis
-    0.10,    % k_mig
-    2e-5,    % k0
-    0.75,    % drt_z
-    0.10     % drt_s
+    -0.5,    % E_b
+    -0.5,    % E_b_azo_trans
+    0.2,     % E_b_azo_cis
+    0.30,    % k_mig
+    1e-4,    % k0
+    0.90,    % drt_z
+    0.50     % drt_s
 ];
 min_vals = min_vals(:).';
 max_vals = max_vals(:).';
@@ -127,6 +127,17 @@ m = matfile(output_filename, 'Writable', true);
 total_saved = 0; % 记录已保存到磁盘的合格样本数
 total_generated_count = 0; % 记录已生成的总样本数(含无效)，用于LHS索引
 
+% 定义分箱采样策略 (5 个箱子，依据活跃度 max_change)
+bin_edges = [0.01, 0.05, 0.1, 0.2, 0.4, 2.0];
+num_bins = length(bin_edges) - 1;
+max_per_bin = ceil(target_num_samples / num_bins);
+bin_counts = zeros(1, num_bins);
+
+fprintf('=== 不平衡采样分箱策略 ===\n');
+fprintf('分箱边界: %s\n', num2str(bin_edges));
+fprintf('目标每箱样本数: %d\n', max_per_bin);
+fprintf('========================\n');
+
 %% 5. 第一阶段：初始采样 (分批处理)
 disp('=== 阶段 1: 初始采样 ===');
 disp(['计划生成总数: ', num2str(num_samples)]);
@@ -151,8 +162,8 @@ for b = 1:num_batches_init
     Y_batch = Y_all_initial(start_idx:end_idx, :);
     
     % 运行模拟、验证并保存
-    [n_ok, ~] = run_batch_simulation_and_save(Y_batch, fixed_params, m, ...
-        num_time_points, 1.2e-5, sprintf('初始批次 %d', b));
+    [n_ok, ~, bin_counts] = run_batch_simulation_and_save(Y_batch, fixed_params, m, ...
+        num_time_points, 1.2e-5, sprintf('初始批次 %d', b), bin_counts, bin_edges, max_per_bin);
     
     total_saved = total_saved + n_ok;
     total_generated_count = total_generated_count + current_batch_size;
@@ -200,8 +211,8 @@ while total_saved < target_num_samples && round_num <= max_rounds
         Y_batch = Y_additional_all(start_idx:end_idx, :);
         
         % 运行模拟、验证并保存
-        [n_ok, ~] = run_batch_simulation_and_save(Y_batch, fixed_params, m, ...
-            num_time_points, 1.2e-5, sprintf('补充(轮%d)批次%d', round_num, b));
+        [n_ok, ~, bin_counts] = run_batch_simulation_and_save(Y_batch, fixed_params, m, ...
+            num_time_points, 1.2e-5, sprintf('补充(轮%d)批次%d', round_num, b), bin_counts, bin_edges, max_per_bin);
         
         total_saved = total_saved + n_ok;
         total_generated_count = total_generated_count + current_batch_size;
@@ -247,13 +258,24 @@ exit;
 
 
 %% 8. 核心批处理流程函数 (新增)
-function [num_valid_saved, valid_indices_local] = run_batch_simulation_and_save(Y_batch, fixed_params, mfile_obj, num_time_points, min_dt_threshold, batch_label)
+function [num_valid_saved, valid_indices_local, bin_counts] = run_batch_simulation_and_save(Y_batch, fixed_params, mfile_obj, num_time_points, min_dt_threshold, batch_label, bin_counts, bin_edges, max_per_bin)
     % 1. 准备
     n_samples = size(Y_batch, 1);
     X_local_cell = cell(n_samples, 1);
     
     % 为了 parfor
     fp = fixed_params; 
+    
+    % 进度追踪：每 20% 输出一次（使用 DataQueue，parfor 兼容）
+    batch_tic = tic;
+    progress_interval = max(1, floor(n_samples / 5)); % 每 20% 输出一次
+    
+    % 使用 containers.Map 作为 handle 类型容器，绕过嵌套函数限制
+    prog = containers.Map('KeyType','char','ValueType','double');
+    prog('count') = 0;
+    
+    dq = parallel.pool.DataQueue;
+    afterEach(dq, @(~) progress_callback(prog, progress_interval, n_samples, batch_tic, batch_label));
     
     % 2. 模拟 (Parfor)
     parfor i = 1:n_samples
@@ -268,7 +290,19 @@ function [num_valid_saved, valid_indices_local] = run_batch_simulation_and_save(
         );
         [~, fam, tye, cy5, dt_used] = run_dna_motor_simulation(current_params, fp);
         X_local_cell{i} = struct('signals', [fam, tye, cy5]', 'dt_used', dt_used);
+        send(dq, i); % 每完成一个样本就发送信号
     end
+    
+    % 统计被跳过的样本数（dt_used == -1 标记为计算超时）
+    n_skipped = 0;
+    for i = 1:n_samples
+        if X_local_cell{i}.dt_used < 0
+            n_skipped = n_skipped + 1;
+        end
+    end
+    batch_elapsed = toc(batch_tic);
+    fprintf('  [%s] 模拟完成，耗时 %.1f 秒，跳过 %d/%d 个超时样本\n', ...
+        batch_label, batch_elapsed, n_skipped, n_samples);
     
     % 3. 整理结果
     dt_records = zeros(n_samples, 1);
@@ -283,8 +317,8 @@ function [num_valid_saved, valid_indices_local] = run_batch_simulation_and_save(
     clear X_local_cell X_temp_merge; % 释放
     
     % 4. 验证
-    [valid_indices_local, invalid_reasons, num_valid] = validate_and_report_stats(...
-        X_batch, dt_records, n_samples, min_dt_threshold, batch_label);
+    [valid_indices_local, invalid_reasons, num_valid, bin_counts] = validate_and_report_stats(...
+        X_batch, dt_records, n_samples, min_dt_threshold, batch_label, bin_counts, bin_edges, max_per_bin);
     
     num_valid_saved = 0;
     
@@ -322,7 +356,7 @@ function [num_valid_saved, valid_indices_local] = run_batch_simulation_and_save(
 end
 
 %% 9. 批量验证函数 (本地函数 - 保持不变)
-function [valid_indices, invalid_reasons, num_valid] = validate_and_report_stats(X_data, dt_data, batch_size, min_dt_threshold, label_str)
+function [valid_indices, invalid_reasons, num_valid, bin_counts] = validate_and_report_stats(X_data, dt_data, batch_size, min_dt_threshold, label_str, bin_counts, bin_edges, max_per_bin)
     num_samples = size(X_data, 1);
     valid_indices = true(num_samples, 1);
     invalid_reasons = cell(num_samples, 1);
@@ -331,11 +365,32 @@ function [valid_indices, invalid_reasons, num_valid] = validate_and_report_stats
     
     valid_batch = true(num_samples, 1);
     reasons_batch = cell(num_samples, 1);
+    max_changes = zeros(num_samples, 1);
         
     parfor k = 1:num_samples
-        [valid_batch(k), reasons_batch{k}] = validate_single_sample(...
+        [valid_batch(k), reasons_batch{k}, max_changes(k)] = validate_single_sample(...
             squeeze(X_data(k, 1, :)), squeeze(X_data(k, 2, :)), squeeze(X_data(k, 3, :)), ...
             dt_data(k), min_dt_threshold);
+    end
+    
+    % 在外层依次进行分箱过滤
+    num_bins = length(bin_counts);
+    for k = 1:num_samples
+        if valid_batch(k)
+            mc = max_changes(k);
+            bin_idx = find(mc >= bin_edges(1:end-1) & mc < bin_edges(2:end), 1);
+            if isempty(bin_idx)
+                valid_batch(k) = false;
+                reasons_batch{k} = 'Out of bin edges';
+            else
+                if bin_counts(bin_idx) < max_per_bin
+                    bin_counts(bin_idx) = bin_counts(bin_idx) + 1;
+                else
+                    valid_batch(k) = false;
+                    reasons_batch{k} = sprintf('Rejected (Bin %d Full)', bin_idx);
+                end
+            end
+        end
     end
         
     valid_indices = valid_batch;
@@ -345,6 +400,12 @@ function [valid_indices, invalid_reasons, num_valid] = validate_and_report_stats
     num_invalid = num_samples - num_valid;
     
     fprintf('%s 统计结果: 合格 %d, 不合格 %d\n', label_str, num_valid, num_invalid);
+    
+    % 打印分箱状态
+    fprintf('  当前分箱进度:\n');
+    for b_idx = 1:num_bins
+        fprintf('    Bin %d [%.2f~%.2f): %d / %d\n', b_idx, bin_edges(b_idx), bin_edges(b_idx+1), bin_counts(b_idx), max_per_bin);
+    end
     
     if num_invalid > 0
         fprintf('  不合格原因分布:\n');
@@ -356,10 +417,18 @@ function [valid_indices, invalid_reasons, num_valid] = validate_and_report_stats
     end
 end
 
-%% 10. 单样本验证函数 (本地函数 - 保持不变)
-function [is_valid, reason] = validate_single_sample(fam, tye, cy5, dt_this, min_dt_threshold)
+%% 10. 单样本验证函数
+function [is_valid, reason, max_change] = validate_single_sample(fam, tye, cy5, dt_this, min_dt_threshold)
     is_valid = true;
     reason = '';
+    max_change = 0;
+
+    % 如果 dt_this <= 0，说明该样本因计算过久被提前熔断跳过
+    if dt_this <= 0
+        is_valid = false;
+        reason = 'Computation timeout (skipped)';
+        return;
+    end
 
     if dt_this <= min_dt_threshold
         is_valid = false;
@@ -377,15 +446,15 @@ function [is_valid, reason] = validate_single_sample(fam, tye, cy5, dt_this, min
         tye_change = max(tye) - min(tye);
         cy5_change = max(cy5) - min(cy5);
 
-        if fam_change <= 0.02
+        % 取三个通道变化量的最大值作为该样本的活跃度指标
+        max_change = max([fam_change, tye_change, cy5_change]);
+
+        % 1. 如果信号处于“死寂”状态（最大变化量太小），直接判定不合格
+        if max_change <= 0.01
             is_valid = false;
-            reason = 'FAM change <= 0.02';
-        elseif tye_change <= 0.06
-            is_valid = false;
-            reason = 'TYE change <= 0.06';
-        elseif cy5_change <= 0.02
-            is_valid = false;
-            reason = 'CY5 change <= 0.02';
+            reason = 'All signals too weak (<= 0.01)';
+        else
+            is_valid = true;
         end
     end
 end
@@ -756,18 +825,37 @@ function [time_out, fam_out, tye_out, cy5_out, dt_used] = run_dna_motor_simulati
     dt=1/10^mag_t/10;
 
     % --- [防护代码开始] ---
-    % 设定一个最小 dt (例如 1.2e-6)，
-    % 对应最大循环步数 (200*60)/1.2e-6 = 1e10
-    MIN_DT = 1.2e-5; %此处如果运行速度较慢可以将阈值降低比如1.2e-3
-    %1.2e-5实测24核cpu需要12小时左右
+    % 设定一个最小 dt 阈值。如果计算出的 dt 小于该阈值，
+    % 说明参数组合导致了极刚性的方程，计算代价过高且物理意义存疑。
+    % 直接提前返回，标记 dt_used = -1，在验证阶段被过滤掉。
+    MIN_DT = 1.2e-5;
+
+    if isnan(dt) || isinf(dt) || dt == 0
+        dt_used = -1;
+        simu_time_local = 130;
+        save_interval_local = 1/60;
+        num_results_local = simu_time_local / save_interval_local + 1;
+        time_out = zeros(num_results_local, 1);
+        fam_out  = zeros(num_results_local, 1);
+        tye_out  = zeros(num_results_local, 1);
+        cy5_out  = zeros(num_results_local, 1);
+        return;
+    end
 
     if dt < MIN_DT
-        dt = MIN_DT;
+        % dt 过小 -> 步数过多 (130*60/dt > 6.5亿)，直接跳过
+        dt_used = -1;
+        simu_time_local = 130;
+        save_interval_local = 1/60;
+        num_results_local = simu_time_local / save_interval_local + 1;
+        time_out = zeros(num_results_local, 1);
+        fam_out  = zeros(num_results_local, 1);
+        tye_out  = zeros(num_results_local, 1);
+        cy5_out  = zeros(num_results_local, 1);
+        return;
     end
-    if isnan(dt) || isinf(dt) || dt == 0
-        dt = 1e-4; % 备用安全值，如果上面修改了这里也需要进行修改比如1e-2
-    end
-    % 记录使用的 dt（用于返回）
+
+    % dt 合法，正常继续
     dt_used = dt;
     % --- [防护代码结束] ---
 
@@ -857,5 +945,18 @@ function updateProgress(total_samples, is_init)
     p = p + 1;
     if mod(p, ceil(total_samples/100)) == 0 || p == total_samples
         fprintf('进度: %.1f%%\n', p/total_samples*100);
+    end
+end
+
+%% 13. Parfor 进度回调函数 (DataQueue 回调，每 20% 输出一次)
+function progress_callback(prog, progress_interval, n_samples, batch_tic, batch_label)
+    prog('count') = prog('count') + 1;
+    c = prog('count');
+    if mod(c, progress_interval) == 0 || c == n_samples
+        elapsed = toc(batch_tic);
+        pct = c / n_samples * 100;
+        eta = elapsed / c * (n_samples - c);
+        fprintf('    [%s] 进度: %d/%d (%.0f%%), 已耗时 %.0f秒, 预计剩余 %.0f秒\n', ...
+            batch_label, c, n_samples, pct, elapsed, eta);
     end
 end
