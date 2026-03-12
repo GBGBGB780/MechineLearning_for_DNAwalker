@@ -13,6 +13,8 @@ import os
 import sys
 import time
 
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -102,8 +104,18 @@ def train(smoke_test: bool = False):
     print(f"  Patch 数量: {model.num_patches}")
 
     # ── 3. 损失函数 / 优化器 / 调度器 ────────────────────────────────────────
-    criterion = nn.MSELoss()
+    # 自适应加权 MSE (Adaptive Loss Weighting)
+    # 初始等权重，随后根据验证集各参数的相对 MSE 自适应调整，
+    # 哪个参数预测得最差（MSE最大），谁的权重就越高，自动平衡！
+    initial_weights = [1.0] * OUTPUT_SIZE
+    param_weights = torch.tensor(initial_weights, dtype=torch.float32, device=device)
+
+    def weighted_mse_loss(pred, target):
+        return torch.mean(param_weights * (pred - target) ** 2)
+
+    criterion = weighted_mse_loss
     mse_fn    = nn.MSELoss(reduction='none')   # 用于逐参数统计
+    print("  损失函数: 自适应加权 MSE Loss (Adaptive Loss Weighting)")
 
     optimizer = optim.AdamW(
         model.parameters(),
@@ -183,11 +195,21 @@ def train(smoke_test: bool = False):
               f"LR: {current_lr:.2e} | "
               f"Time: {epoch_time:.1f}s")
 
-        # 每 50 epoch 打印逐参数 MSE
+        # --- 自适应损失加权 (Adaptive Loss Weighting) ---
+        # 根据本轮验证集各参数的 MSE，动态调整下一轮训练的权重
+        raw_weights = np.sqrt(avg_val_mse_per_p + 1e-6)
+        normalized_weights = raw_weights / raw_weights.mean()
+        new_weights_tensor = torch.tensor(normalized_weights, dtype=torch.float32).to(device)
+        param_weights = 0.9 * param_weights + 0.1 * new_weights_tensor
+
+        # 每 50 epoch 打印逐参数 MSE 和 当前权重
         if epoch % 50 == 0 or epoch == NUM_EPOCHS:
             mse_str = ", ".join(
                 [f"{n}={v:.5f}" for n, v in zip(param_names, avg_val_mse_per_p)])
+            weight_str = ", ".join(
+                [f"{n}={v:.3f}" for n, v in zip(param_names, param_weights.cpu().numpy())])
             print(f"  [Per-Param MSE] {mse_str}")
+            print(f"  [Current Weights] {weight_str}")
 
         # ---- 保存最佳模型 + Early Stopping ----
         if avg_val_mse < best_val_mse:
