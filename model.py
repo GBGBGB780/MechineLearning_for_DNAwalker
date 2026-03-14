@@ -96,3 +96,115 @@ class InverseCNN(nn.Module):
         x = self.regressor(x)
         
         return x
+
+
+class ForwardDecoder(nn.Module):
+    """
+    正向解码器 (Neural Surrogate Model / 数字孪生近似器)。
+    学习从 7 个归一化物理参数 → 3 条荧光曲线 (3×seq_length) 的映射。
+    本质上是 MATLAB 物理模拟器的可微分近似。
+    
+    架构: MLP 扩展 → 1D 转置卷积上采样
+    - 输入: (Batch, 7)  [Sigmoid 归一化后的参数空间]
+    - 输出: (Batch, 3*seq_length) [重构的荧光曲线，展平]
+    """
+
+    def __init__(self, input_size, config):
+        """
+        初始化 ForwardDecoder。
+        
+        Args:
+            input_size: 参数维度 (通常为 7)
+            config: Config 对象
+        """
+        super(ForwardDecoder, self).__init__()
+        
+        if config is None:
+            raise ValueError("Config object is required for ForwardDecoder initialization.")
+        
+        self.num_curves = config.get_num_curves()    # 3
+        self.seq_length = config.get_seq_length()     # 7801
+        
+        # 从配置读取 Decoder 结构参数
+        # 使用与 Encoder 对称的通道数，但方向相反
+        conv4 = config.get_conv4_params()  # Encoder 最深层: 256 通道
+        conv3 = config.get_conv3_params()  # 128 通道
+        conv2 = config.get_conv2_params()  # 64 通道
+        conv1 = config.get_conv1_params()  # 32 通道
+        
+        dec_init_len = 64  # 对应 Encoder 的 AdaptiveAvgPool1d(64) 输出
+        
+        # --- MLP 扩展层: 7 → 256*64 ---
+        self.expander = nn.Sequential(
+            nn.Linear(input_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 512),
+            nn.ReLU(),
+            nn.Linear(512, conv4['out_channels'] * dec_init_len),  # 7 → 256*64 = 16384
+            nn.ReLU(),
+        )
+        
+        # --- 转置卷积上采样层 (镜像 Encoder 的卷积+池化) ---
+        # Encoder 路径: (3, 7801) → pool → conv1(32) → pool → conv2(64) → pool → conv3(128) → pool → conv4(256) → AdaptiveAvgPool(64)
+        # Decoder 路径: (256, 64) → upsample → deconv4(128) → upsample → deconv3(64) → upsample → deconv2(32) → upsample → deconv1(3) → adjust
+        self.decoder_convs = nn.Sequential(
+            # 阶段 1: (256, 64) → (128, 128)
+            nn.Upsample(scale_factor=2, mode='linear', align_corners=False),
+            nn.Conv1d(conv4['out_channels'], conv3['out_channels'], kernel_size=5, padding=2),
+            nn.BatchNorm1d(conv3['out_channels']),
+            nn.ReLU(),
+            
+            # 阶段 2: (128, 128) → (64, 256)
+            nn.Upsample(scale_factor=2, mode='linear', align_corners=False),
+            nn.Conv1d(conv3['out_channels'], conv2['out_channels'], kernel_size=5, padding=2),
+            nn.BatchNorm1d(conv2['out_channels']),
+            nn.ReLU(),
+            
+            # 阶段 3: (64, 256) → (32, 512)
+            nn.Upsample(scale_factor=2, mode='linear', align_corners=False),
+            nn.Conv1d(conv2['out_channels'], conv1['out_channels'], kernel_size=5, padding=2),
+            nn.BatchNorm1d(conv1['out_channels']),
+            nn.ReLU(),
+            
+            # 阶段 4: (32, 512) → (16, 1024)
+            nn.Upsample(scale_factor=2, mode='linear', align_corners=False),
+            nn.Conv1d(conv1['out_channels'], 16, kernel_size=5, padding=2),
+            nn.BatchNorm1d(16),
+            nn.ReLU(),
+        )
+        
+        # --- 最终调整层: 将通道数降为 3，并插值到精确的 seq_length ---
+        self.final_conv = nn.Sequential(
+            nn.Conv1d(16, self.num_curves, kernel_size=7, padding=3),
+            # 不加激活函数，因为输出是归一化后的荧光值（可正可负）
+        )
+
+    def forward(self, params):
+        """
+        正向传播: 从参数重构荧光曲线。
+        
+        Args:
+            params: (Batch, 7) 归一化后的参数
+        
+        Returns:
+            x_recon: (Batch, 3*seq_length) 重构的荧光曲线（展平）
+        """
+        # 1. MLP 扩展: (B, 7) → (B, 256*64)
+        x = self.expander(params)
+        
+        # 2. Reshape 为 3D: (B, 256*64) → (B, 256, 64)
+        x = x.view(-1, 256, 64)
+        
+        # 3. 转置卷积上采样: (B, 256, 64) → (B, 16, 1024)
+        x = self.decoder_convs(x)
+        
+        # 4. 最终卷积: (B, 16, 1024) → (B, 3, 1024)
+        x = self.final_conv(x)
+        
+        # 5. 插值到精确的 seq_length: (B, 3, 1024) → (B, 3, 7801)
+        x = nn.functional.interpolate(x, size=self.seq_length, mode='linear', align_corners=False)
+        
+        # 6. 展平: (B, 3, 7801) → (B, 23403)
+        x = x.view(x.size(0), -1)
+        
+        return x
