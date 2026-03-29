@@ -211,6 +211,7 @@ def train_phase1_decoder(decoder, train_loader, val_loader, device,
     criterion = nn.MSELoss()
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
+    print(f"  [即将开始 Phase 1 训练] 当前 Decoder 参与训练参数量: {count_parameters(decoder):,}")
     for epoch in range(start_epoch, num_epochs):
         epoch_start = time.time()
 
@@ -392,6 +393,7 @@ def train_phase2_encoder(encoder, decoder, train_loader, val_loader,
     best_val_loss = best_val_loss
     os.makedirs(os.path.dirname(encoder_save_path), exist_ok=True)
 
+    print(f"  [即将开始 Phase 2 训练] 当前 Transformer Encoder 参与训练参数量: {count_parameters(encoder):,}")
     for epoch in range(start_epoch, num_epochs):
         epoch_start = time.time()
 
@@ -599,6 +601,8 @@ def train_phase3_joint(encoder, decoder, train_loader, val_loader,
 
     os.makedirs(os.path.dirname(encoder_save_path), exist_ok=True)
 
+    total_trainable = count_parameters(encoder) + count_parameters(decoder)
+    print(f"  [即将开始 Phase 3 训练] 当前联合微调参与训练参数量: {total_trainable:,}")
     for epoch in range(start_epoch, num_epochs):
         epoch_start = time.time()
 
@@ -789,6 +793,9 @@ def main():
                         help='启用 Phase 3 联合微调 (默认只跑 Phase 1+2)')
     parser.add_argument('--checkpoint-every', type=int, default=CHECKPOINT_EVERY_EPOCHS,
                         help=f'每 N epoch 保存一次 checkpoint (默认 {CHECKPOINT_EVERY_EPOCHS})')
+    parser.add_argument('--pretrained-encoder', type=str, default=None,
+                        help='预训练 Encoder 权重路径 (由 train_transformer.py 训练，'
+                             '例如 results/best_transformer_model.pth)')
     args = parser.parse_args()
 
     global CHECKPOINT_EVERY_EPOCHS
@@ -963,6 +970,27 @@ def main():
                 torch.load(decoder_save_path, map_location=device, weights_only=False)
             )
             print(f"  已加载 Phase 1 训练好的 Decoder: {decoder_save_path}")
+
+        # ★ 加载预训练 Encoder 权重（若 Phase 2 已在训练中恢复则跳过）
+        if args.pretrained_encoder and not (start_phase == 2 and resume_epoch > 0):
+            if os.path.exists(args.pretrained_encoder):
+                ckpt_enc = torch.load(
+                    args.pretrained_encoder, map_location=device, weights_only=False
+                )
+                if isinstance(ckpt_enc, dict) and 'model_state' in ckpt_enc:
+                    encoder.load_state_dict(ckpt_enc['model_state'])
+                    src_epoch = ckpt_enc.get('epoch', '?')
+                    src_mse = ckpt_enc.get('val_mse', '?')
+                    if isinstance(src_mse, float):
+                        src_mse = f'{src_mse:.6f}'
+                    print(f"  ✅ 已加载预训练 Encoder "
+                          f"(来自 Epoch {src_epoch}, Val MSE: {src_mse})")
+                else:
+                    encoder.load_state_dict(ckpt_enc)
+                    print(f"  ✅ 已加载预训练 Encoder: {args.pretrained_encoder}")
+            else:
+                print(f"  ⚠️ 预训练 Encoder 文件不存在: "
+                      f"{args.pretrained_encoder}，将使用随机初始化")
 
         p2_start_epoch = resume_epoch if start_phase == 2 else 0
         p2_best = resume_best_loss if start_phase == 2 else float('inf')

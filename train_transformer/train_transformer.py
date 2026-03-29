@@ -137,7 +137,8 @@ def train(smoke_test: bool = False):
     print()
 
     # ── 4. 训练循环 ──────────────────────────────────────────────────────────
-    print("--- 3. 训练中 ---")
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"--- 3. 训练中 (即将开始训练，当前模型总参与训练参数量: {n_params:,}) ---")
     best_val_mse    = float('inf')
     epochs_no_impr  = 0
     train_start     = time.time()
