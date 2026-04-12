@@ -54,7 +54,7 @@ fprintf('  k0=%.4e  k_mig=%.4f  drt_z=%.4f  drt_s=%.4f\n\n', x0(4), x0(5), x0(6)
 %  2. 读取实验数据（计算 MSE 用的目标数据） / Read experimental data (Target data for MSE calculation)
 %% ============================================================
 
-exp_data_file = 'Fig3a_fitting.xlsx';
+exp_data_file = '../results/Fig3a_fitting.xlsx';
 if ~exist(exp_data_file, 'file')
     error('错误: 未找到实验数据 %s', exp_data_file);
 end

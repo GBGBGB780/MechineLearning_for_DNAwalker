@@ -15,8 +15,8 @@ import pandas as pd
 import os
 
 # 文件路径 / File paths
-INPUT_FILE = 'Fig3a_fitting.xlsx'
-OUTPUT_FILE = 'Fig3a_fitting_stretched.xlsx'
+INPUT_FILE = '../results/Fig3a_fitting.xlsx'
+OUTPUT_FILE = '../results/Fig3a_fitting_stretched.xlsx'
 
 
 def stretch_y_data(input_path, output_path, factor=2):

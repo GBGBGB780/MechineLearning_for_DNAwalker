@@ -1,7 +1,7 @@
 # coding=utf-8
 """
-predict_cnn.py — CNN 实验数据预测脚本
-predict_cnn.py — CNN experimental data prediction script
+predict.py — CNN 实验数据预测脚本
+predict.py — CNN experimental data prediction script
 
 完整流程 / Full pipeline:
     1. 加载实验 Excel → 插值 + SG 平滑        / Load Excel → interpolation + SG smoothing
@@ -12,7 +12,7 @@ predict_cnn.py — CNN experimental data prediction script
 
 用法 / Usage:
     cd train_cnn/
-    python predict_cnn.py
+    python predict.py
 """
 
 import torch
@@ -34,7 +34,7 @@ if _THIS_DIR not in sys.path:
 
 from inference_cnn import NanorobotPredictor
 
-MATLAB_INPUT_FILE = os.path.join(_PARENT_DIR, "matlab_input_params.txt")
+MATLAB_INPUT_FILE = os.path.join(_THIS_DIR, "matlab_input_params.txt")
 
 
 def load_real_experimental_data(config, data_path):
@@ -145,8 +145,6 @@ def predict_parameters():
         return
 
     data_path = predictor.config.get_experimental_data_path()
-    if not os.path.isabs(data_path):
-        data_path = os.path.join(_PARENT_DIR, data_path)
 
     # 加载数据 / Load data
     X_raw = load_real_experimental_data(predictor.config, data_path)

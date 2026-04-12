@@ -726,7 +726,7 @@ save result_mig.txt result_mig -ASCII
 fprintf('\nReading experimental data and generating comparison plot... / 正在读取实验数据并生成对比图...\n');
 
 % 定义实验数据文件路径 / Define experimental data file path
-exp_data_file = 'Fig3a_fitting.xlsx';
+exp_data_file = '../results/Fig3a_fitting.xlsx';
 
 % 检查文件是否存在 / Check if file exists
 if exist(exp_data_file, 'file')

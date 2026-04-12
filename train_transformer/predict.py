@@ -1,10 +1,10 @@
 # coding=utf-8
 """
-predict_transformer.py — Transformer 实验数据预测脚本
-predict_transformer.py — Transformer experimental data prediction script
+predict.py — Transformer 实验数据预测脚本
+predict.py — Transformer experimental data prediction script
 
-与 CNN predict_cnn.py 逻辑一致，但使用 Transformer 模型推理。
-Same logic as CNN predict_cnn.py, but uses Transformer model for inference.
+与 CNN 的 predict.py 逻辑一致，但使用 Transformer 模型推理。
+Same logic as CNN predict.py, but uses Transformer model for inference.
 """
 
 import os
@@ -26,7 +26,7 @@ if _THIS_DIR not in sys.path:
 from inference_transformer import TransformerPredictor
 
 # --- 全局常量 ---
-MATLAB_INPUT_FILE = os.path.join(_PARENT_DIR, "matlab_input_params.txt")
+MATLAB_INPUT_FILE = os.path.join(_THIS_DIR, "matlab_input_params.txt")
 
 
 def load_real_experimental_data(config, data_path):
@@ -102,8 +102,6 @@ def main():
 
     # 2. 读取实验数据路径
     data_file = predictor.parent_config.get_experimental_data_path()
-    if not os.path.isabs(data_file):
-        data_file = os.path.join(_PARENT_DIR, data_file)
 
     # 3. 加载并处理数据
     X_sample_raw = load_real_experimental_data(predictor.parent_config, data_file)

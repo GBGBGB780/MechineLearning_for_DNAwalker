@@ -10,6 +10,9 @@ processing parameters are accessed through this class.
 
 import configparser
 import os
+import sys
+
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class Config:
@@ -70,23 +73,26 @@ class Config:
         return self.config.getint('TRAINING', 'num_epochs')
 
     def get_output_path(self):
-        """获取输出目录 / Get output directory path."""
-        return self.config.get('PATHS', 'output_path')
+        """获取公共输出目录 (根目录下的 results) / Get common output directory path."""
+        path = self.config.get('PATHS', 'output_path', fallback='results')
+        if not os.path.isabs(path) and path.startswith('./'):
+            path = path[2:]
+        return os.path.join(_THIS_DIR, path)
 
     def get_model_save_path(self):
-        """获取模型保存路径 / Get model save path."""
+        """获取模型保存路径 (执行目录下的 results) / Get model save path."""
         filename = self.config.get('TRAINING', 'model_save_path')
-        return os.path.join(self.get_output_path(), filename)
+        return os.path.join("results", filename)
 
     def get_x_scaler_file(self):
-        """获取 X 归一化器路径 / Get X scaler save path."""
+        """获取 X 归一化器路径 (执行目录下的 results) / Get X scaler save path."""
         filename = self.config.get('TRAINING', 'x_scaler_file')
-        return os.path.join(self.get_output_path(), filename)
+        return os.path.join("results", filename)
 
     def get_y_scaler_file(self):
-        """获取 Y 归一化器路径 / Get Y scaler save path."""
+        """获取 Y 归一化器路径 (执行目录下的 results) / Get Y scaler save path."""
         filename = self.config.get('TRAINING', 'y_scaler_file')
-        return os.path.join(self.get_output_path(), filename)
+        return os.path.join("results", filename)
 
     # 学习率调度器 / LR scheduler
     def get_scheduler_mode(self):
@@ -270,7 +276,12 @@ class Config:
 
     def get_experimental_data_path(self):
         """获取实验数据路径 / Get experimental data path."""
-        return self.config.get('NANOROBOT_MODELING', 'path_to_experimental_data_a')
+        path = self.config.get('NANOROBOT_MODELING', 'path_to_experimental_data_a')
+        if not os.path.isabs(path):
+            if path.startswith('./'):
+                path = path[2:]
+            return os.path.join(self.get_output_path(), path)
+        return path
 
     def get_sim_total_time(self):
         """获取模拟总时长 / Get total simulation time."""
