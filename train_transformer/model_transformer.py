@@ -1,14 +1,18 @@
 # coding=utf-8
 """
-model_transformer.py  —  DNA Walker Transformer 模型
+model_transformer.py  —  DNA Walker Transformer 模型 (TokenMixer 版)
 
-架构：PatchTST-Inspired + Cross-Channel Attention
+架构：PatchTST-Inspired + TokenMixer (替换 MHA)
   输入: (B, C, L)  C=3 通道 (FAM/TYE/CY5), L=7801 时间点
   ↓ Patch Embedding → (B, C, P, d_model)
-  ↓ Temporal Self-Attention (per channel) → (B, C, P, d_model)
-  ↓ Cross-Channel Attention (per patch) → (B, C, P, d_model)
+  ↓ Temporal TokenMixer Block (per channel) → (B, C, P, d_model)
+  ↓ Cross-Channel TokenMixer Block (per patch) → (B, C, P, d_model)
   ↓ Global Average Pool → (B, d_model)
   ↓ Regression Head → (B, output_size)
+
+TokenMixer 核心思想：
+  仅通过维度重排 + 转置实现 token 间信息混合，复杂度 O(B*T*D)。
+  要求 num_heads == num_tokens (H=T)，每个新 token 都混入了其他 token 的信息。
 """
 
 import torch
@@ -92,29 +96,62 @@ class LearnablePositionalEncoding(nn.Module):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. 时间维度 Transformer Block（每个通道独立）
+# 3. TokenMixer — 无参数 token 信息混合
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TemporalTransformerBlock(nn.Module):
+class TokenMixer(nn.Module):
     """
-    单层 Transformer Block（Pre-LayerNorm 变体，训练更稳定）。
-    作用于时间（Patch）维度，每个通道独立计算自注意力。
+    通过维度重排 + 转置实现 token 间信息混合，复杂度 O(B*T*D)。
+    要求 num_heads == num_tokens (H=T)，
+    每个新 token = 自己的块 + 其他所有 token 的块（重排后拼接）。
+
+    无可学习参数，仅做 reshape + permute。
+    """
+
+    def __init__(self, num_tokens: int, d_model: int, dropout: float = 0.0):
+        super().__init__()
+        self.num_tokens = num_tokens
+        self.d_model = d_model
+        self.num_heads = num_tokens  # H = T
+        assert d_model % num_tokens == 0, \
+            f"d_model({d_model}) 必须能整除 num_tokens({num_tokens})"
+        self.d_head = d_model // num_tokens
+        self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        x: (B, T, D)
+        """
+        B, T, D = x.shape
+        # [B, T, D] → [B, T, H, Dh]  把每个 token 切分为 H 个小块
+        x = x.reshape(B, T, self.num_heads, self.d_head)
+        # [B, T, H, Dh] → [B, H, T, Dh]  把所有 token 的第 i 块放一起
+        x = x.permute(0, 2, 1, 3)
+        # [B, H, T, Dh] → [B, T, D]  每个新 token = 来自不同原始 token 的块
+        x = x.reshape(B, T, D)
+        x = self.dropout(x)
+        return x
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. 时间维度 TokenMixer Block（每个通道独立）
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TemporalTokenMixerBlock(nn.Module):
+    """
+    单层 TokenMixer Block（Pre-LayerNorm 变体）。
+    用 TokenMixer 替代 MHA，保留 FFN 作为可学习部分。
+    作用于时间（Patch）维度，每个通道独立计算。
 
     输入/输出: (B*C, P, d_model)
     """
 
-    def __init__(self, d_model: int, n_heads: int, d_ff: int, dropout: float):
+    def __init__(self, num_tokens: int, d_model: int, d_ff: int, dropout: float):
         super().__init__()
-        assert d_model % n_heads == 0, "d_model 必须整除 n_heads"
-        self.n_heads  = n_heads
-        self.head_dim = d_model // n_heads
-        self.dropout  = dropout
         self.norm1 = nn.LayerNorm(d_model)
-        # QKV 合并投影（一次矩阵乘法，效率更高）
-        self.qkv_proj = nn.Linear(d_model, 3 * d_model, bias=False)
-        self.out_proj = nn.Linear(d_model, d_model, bias=False)
+        self.token_mixer = TokenMixer(num_tokens, d_model, dropout)
         self.norm2 = nn.LayerNorm(d_model)
-        self.ffn   = nn.Sequential(
+        self.ffn = nn.Sequential(
             nn.Linear(d_model, d_ff),
             nn.GELU(),
             nn.Dropout(dropout),
@@ -123,50 +160,34 @@ class TemporalTransformerBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Pre-LN Self-Attention（Flash Attention via F.scaled_dot_product_attention）
+        # Pre-LN TokenMixer (替代 Self-Attention)
         residual = x
-        x = self.norm1(x)
-        BT, S, D = x.shape
-        # QKV 分拆 → (BT, n_heads, S, head_dim)
-        qkv = self.qkv_proj(x).reshape(BT, S, 3, self.n_heads, self.head_dim)
-        q, k, v = qkv.unbind(dim=2)          # 各 (BT, S, n_heads, head_dim)
-        q = q.transpose(1, 2)                 # (BT, n_heads, S, head_dim)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
-        # Flash Attention（训练时启用 dropout，推理时为 0）
-        dropout_p = self.dropout if self.training else 0.0
-        attn_out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
-        attn_out = attn_out.transpose(1, 2).reshape(BT, S, D)  # (BT, S, D)
-        x = self.out_proj(attn_out) + residual
+        x = self.token_mixer(self.norm1(x)) + residual
         # Pre-LN FFN
         residual = x
-        x = self.ffn(self.norm2(x))
-        return x + residual
+        x = self.ffn(self.norm2(x)) + residual
+        return x
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. 通道间注意力（Cross-Channel Attention）
+# 5. 通道间 TokenMixer Block（Cross-Channel TokenMixer）
 # ─────────────────────────────────────────────────────────────────────────────
 
-class CrossChannelAttentionBlock(nn.Module):
+class CrossChannelTokenMixerBlock(nn.Module):
     """
-    在每个 Patch 位置，对三条曲线（通道维度）做 Multi-Head Attention。
+    在每个 Patch 位置，对三条曲线（通道维度）做 TokenMixer 混合。
     让模型显式学习 FAM ↔ TYE ↔ CY5 之间的相互关系。
+    保留 FFN 作为可学习部分。
 
     输入/输出:  (B, C, P, d_model)
     """
 
-    def __init__(self, d_model: int, n_heads: int, d_ff: int, dropout: float):
+    def __init__(self, num_channels: int, d_model: int, d_ff: int, dropout: float):
         super().__init__()
-        assert d_model % n_heads == 0, "d_model 必须整除 n_heads"
-        self.n_heads  = n_heads
-        self.head_dim = d_model // n_heads
-        self.dropout  = dropout
         self.norm1 = nn.LayerNorm(d_model)
-        self.qkv_proj = nn.Linear(d_model, 3 * d_model, bias=False)
-        self.out_proj = nn.Linear(d_model, d_model, bias=False)
+        self.token_mixer = TokenMixer(num_channels, d_model, dropout)
         self.norm2 = nn.LayerNorm(d_model)
-        self.ffn   = nn.Sequential(
+        self.ffn = nn.Sequential(
             nn.Linear(d_model, d_ff),
             nn.GELU(),
             nn.Dropout(dropout),
@@ -176,25 +197,15 @@ class CrossChannelAttentionBlock(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, C, P, D = x.shape
-        # Rearrange: (B*P, C, D) — 对每个 Patch position 做通道间注意力
+        # Rearrange: (B*P, C, D) — 对每个 Patch position 做通道间 TokenMixer
         x = x.permute(0, 2, 1, 3).reshape(B * P, C, D)
 
+        # Pre-LN TokenMixer (替代 Cross-Channel Attention)
         residual = x
-        x = self.norm1(x)
-        BP, S, _ = x.shape   # S = C = 3
-        qkv = self.qkv_proj(x).reshape(BP, S, 3, self.n_heads, self.head_dim)
-        q, k, v = qkv.unbind(dim=2)
-        q = q.transpose(1, 2)   # (BP, n_heads, S, head_dim)
-        k = k.transpose(1, 2)
-        v = v.transpose(1, 2)
-        dropout_p = self.dropout if self.training else 0.0
-        attn_out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
-        attn_out = attn_out.transpose(1, 2).reshape(BP, S, D)
-        x = self.out_proj(attn_out) + residual
-
+        x = self.token_mixer(self.norm1(x)) + residual
+        # Pre-LN FFN
         residual = x
-        x = self.ffn(self.norm2(x))
-        x = x + residual
+        x = self.ffn(self.norm2(x)) + residual
 
         # Restore: (B, C, P, D)
         x = x.reshape(B, P, C, D).permute(0, 2, 1, 3)
@@ -202,18 +213,18 @@ class CrossChannelAttentionBlock(nn.Module):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5. 主模型 DNAWalkerTransformer
+# 6. 主模型 DNAWalkerTransformer
 # ─────────────────────────────────────────────────────────────────────────────
 
 class DNAWalkerTransformer(nn.Module):
     """
-    PatchTST-Inspired Transformer，用于 DNA Walker 反问题：
+    PatchTST-Inspired Transformer (TokenMixer 版)，用于 DNA Walker 反问题：
     三条荧光曲线 (FAM, TYE, CY5)  →  7 个物理参数
 
     整体流程：
       Patch Embedding → Positional Encoding
-      → N × TemporalTransformerBlock (per channel)
-      → M × CrossChannelAttentionBlock
+      → N × TemporalTokenMixerBlock (per channel)
+      → M × CrossChannelTokenMixerBlock
       → Global Average Pool (时间 + 通道)
       → Regression Head → Sigmoid (Safe Sigmoid Lock)
     """
@@ -226,7 +237,7 @@ class DNAWalkerTransformer(nn.Module):
         patch_size: int,
         stride: int,
         d_model: int,
-        n_heads: int,
+        n_heads: int,           # 保留参数接口兼容，但 TokenMixer 不使用
         n_layers: int,
         d_ff: int,
         cross_channel_layers: int,
@@ -241,21 +252,28 @@ class DNAWalkerTransformer(nn.Module):
         self.num_channels = num_channels
         self.d_model      = d_model
 
+        # 维度约束检查 (TokenMixer 要求 d_model 能被 num_tokens 整除)
+        assert d_model % num_patches == 0, \
+            f"d_model({d_model}) 必须能整除 num_patches({num_patches})，" \
+            f"当前 patch_size={patch_size}, stride={stride}"
+        assert d_model % num_channels == 0, \
+            f"d_model({d_model}) 必须能整除 num_channels({num_channels})"
+
         # --- Patch Embedding ---
         self.patch_embed = PatchEmbedding(patch_size, stride, d_model)
 
         # --- 可学习位置编码 ---
         self.pos_enc = LearnablePositionalEncoding(num_patches, d_model, dropout)
 
-        # --- 时间维度 Transformer（通道独立）---
+        # --- 时间维度 TokenMixer（通道独立）---
         self.temporal_blocks = nn.ModuleList([
-            TemporalTransformerBlock(d_model, n_heads, d_ff, dropout)
+            TemporalTokenMixerBlock(num_patches, d_model, d_ff, dropout)
             for _ in range(n_layers)
         ])
 
-        # --- 通道间注意力 ---
+        # --- 通道间 TokenMixer ---
         self.cross_channel_blocks = nn.ModuleList([
-            CrossChannelAttentionBlock(d_model, n_heads, d_ff, dropout)
+            CrossChannelTokenMixerBlock(num_channels, d_model, d_ff, dropout)
             for _ in range(cross_channel_layers)
         ])
 
@@ -305,13 +323,13 @@ class DNAWalkerTransformer(nn.Module):
         x = self.pos_enc(x)
         x = x.reshape(B, C, P, D)
 
-        # 3. 通道独立时间自注意力
+        # 3. 通道独立时间 TokenMixer
         x = x.reshape(B * C, P, D)
         for block in self.temporal_blocks:
             x = block(x)
         x = x.reshape(B, C, P, D)
 
-        # 4. 通道间注意力
+        # 4. 通道间 TokenMixer
         for block in self.cross_channel_blocks:
             x = block(x)
 
@@ -356,18 +374,24 @@ def build_transformer(parent_config, transformer_config) -> DNAWalkerTransformer
 if __name__ == '__main__':
     # 快速验证：随机输入 → 检查输出形状
     B, C, L = 4, 3, 7801
-    x = torch.randn(B, C, L)
+    D_MODEL = 576
+    # 参数需满足: d_model % num_patches == 0 且 d_model % C == 0
+    # patch_size=161, stride=80 → num_patches=96, d_model=576 → 576/96=6, 576/3=192
     model = DNAWalkerTransformer(
         seq_len=L, num_channels=C, output_size=7,
-        patch_size=50, stride=25,
-        d_model=256, n_heads=8, n_layers=4, d_ff=512,
-        cross_channel_layers=2, dropout=0.15, dropout_head=0.3
+        patch_size=161, stride=80,
+        d_model=D_MODEL, n_heads=8, n_layers=6, d_ff=1152,
+        cross_channel_layers=3, dropout=0.15, dropout_head=0.3
     )
+    x = torch.randn(B, C, L)
     out = model(x)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"输入形状: {x.shape}")
     print(f"输出形状: {out.shape}  (期望: [{B}, 7])")
+    print(f"Patch 数量: {model.num_patches}")
+    print(f"Temporal d_head: {D_MODEL // model.num_patches}")
+    print(f"Cross-Channel d_head: {D_MODEL // C}")
     print(f"模型参数量: {n_params:,}")
     assert out.shape == (B, 7), "输出形状错误！"
     assert out.min() >= 0 and out.max() <= 1, "Sigmoid 输出范围错误！"
-    print("✅ 模型架构验证通过")
+    print("✅ 模型架构验证通过 (TokenMixer Scaled-Up 版)")
