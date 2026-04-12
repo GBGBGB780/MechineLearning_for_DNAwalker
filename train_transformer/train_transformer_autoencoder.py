@@ -39,23 +39,26 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-# ── 路径设置：允许从任意工作目录运行 ──
+# ── 路径设置：允许从任意工作目录运行 / Path setup: allow running from any directory ──
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PARENT_DIR = os.path.dirname(_THIS_DIR)
+_CNN_DIR = os.path.join(_PARENT_DIR, 'train_cnn')
 if _PARENT_DIR not in sys.path:
     sys.path.insert(0, _PARENT_DIR)
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
+if _CNN_DIR not in sys.path:
+    sys.path.insert(0, _CNN_DIR)
 
 from config_loader_transformer import load_configs
 from config_loader import Config as ParentConfig
 from dataset import load_and_preprocess_data_3d
 from model_transformer import build_transformer
-from model import ForwardDecoder
+from model_cnn import ForwardDecoder  # CNN Decoder 位于 train_cnn/ / CNN Decoder in train_cnn/
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 常量与默认参数
+# 常量与默认参数 / Constants and default parameters
 # ─────────────────────────────────────────────────────────────────────────────
 
 CHECKPOINT_FILENAME = 'results/transformer_autoencoder_checkpoint.pth'
@@ -65,16 +68,16 @@ ENCODER_SAVE_FILENAME = 'results/best_transformer_model.pth'
 CHECKPOINT_EVERY_EPOCHS = 20   # 每 N epoch 强制保存一次 checkpoint
 DEFAULT_MAX_HOURS = 23.0       # 默认最大运行小时数 (HPC 24h 限制，留 1h 余量)
 
-# Phase 1 默认参数
+# Phase 1 默认参数 / Phase 1 default parameters
 P1_NUM_EPOCHS = 500
 P1_LR = 0.001
 P1_PATIENCE = 100
 
-# Phase 2 默认参数
+# Phase 2 默认参数 / Phase 2 default parameters
 P2_ALPHA = 0.7          # 重构 Loss 权重
 P2_BETA = 0.3           # 参数 Loss 权重
 
-# Phase 3 默认参数
+# Phase 3 默认参数 / Phase 3 default parameters
 P3_ALPHA = 0.7
 P3_BETA = 0.3
 P3_NUM_EPOCHS = 200
@@ -82,7 +85,7 @@ P3_PATIENCE = 50
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 工具函数
+# 工具函数 / Utility functions
 # ─────────────────────────────────────────────────────────────────────────────
 
 def count_parameters(model):
@@ -120,7 +123,7 @@ def should_stop_for_time(start_time, max_hours):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Checkpoint 管理
+# Checkpoint 管理 / Checkpoint management
 # ─────────────────────────────────────────────────────────────────────────────
 
 def save_checkpoint(path, phase, epoch, decoder, encoder, optimizer, scheduler,
@@ -173,7 +176,7 @@ def load_checkpoint(path, decoder, encoder, device):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 1: 训练 ForwardDecoder
+# Phase 1: 训练 ForwardDecoder / Phase 1: Train ForwardDecoder
 # ─────────────────────────────────────────────────────────────────────────────
 
 def train_phase1_decoder(decoder, train_loader, val_loader, device,
@@ -312,7 +315,7 @@ def train_phase1_decoder(decoder, train_loader, val_loader, device,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 2: 冻结 Decoder，训练 Transformer Encoder
+# Phase 2: 冻结 Decoder，训练 Transformer Encoder / Phase 2: Freeze Decoder, Train Transformer Encoder
 # ─────────────────────────────────────────────────────────────────────────────
 
 def train_phase2_encoder(encoder, decoder, train_loader, val_loader,
@@ -550,7 +553,7 @@ def train_phase2_encoder(encoder, decoder, train_loader, val_loader,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 3 (可选): 联合微调
+# Phase 3 (可选): 联合微调 / Phase 3 (Optional): Joint fine-tuning
 # ─────────────────────────────────────────────────────────────────────────────
 
 def train_phase3_joint(encoder, decoder, train_loader, val_loader,

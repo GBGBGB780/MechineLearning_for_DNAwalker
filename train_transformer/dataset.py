@@ -1,10 +1,11 @@
 # coding=utf-8
 """
-dataset.py  —  DNA Walker Transformer 数据加载模块
+dataset.py — Transformer 专用数据加载模块
+dataset.py — Transformer-specific data loading module
 
-与 CNN 的 utils.py 主要区别:
-  - X 保持 3D 形状 (N, 3, 7801)，不展平，直接喂给 Transformer 的 Patch Embedding
-  - 其余预处理（振幅过滤、单样本联合通道归一化、y_scaler）完全复用同一套逻辑
+与 CNN data_loader.py 的区别 / Difference from CNN data_loader.py:
+  - X 保持 3D 形状 (N, 3, 7801)，不展平 / X stays 3D for Patch Embedding
+  - 其余预处理一致 / All other preprocessing is identical
 """
 
 import sys
@@ -16,7 +17,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 
-# 将上层目录加入 Python 模块搜索路径，以复用 config_loader.py
+# 将上层目录加入模块搜索路径 / Add parent directory to module search path
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PARENT_DIR = os.path.dirname(_THIS_DIR)
 if _PARENT_DIR not in sys.path:
@@ -25,7 +26,8 @@ if _PARENT_DIR not in sys.path:
 
 def load_and_preprocess_data_3d(npz_filename, batch_size, parent_config, transformer_config):
     """
-    加载、预处理数据，返回保持 3D 形状 (N, 3, seq_len) 的 DataLoaders。
+    加载、预处理数据，返回 3D DataLoaders。
+    Load and preprocess data, returning 3D DataLoaders (N, C, T).
 
     Args:
         npz_filename   (str):     数据集 .npz 路径

@@ -1,242 +1,356 @@
 # DNA Nanorobot Inverse Design & Verification System
+
 # DNA 纳米机器人逆向设计与验证系统
 
-[English Description follows Chinese / 下方为英文说明]
+> **Inverse design of physical parameters for a light-controlled DNA Walker nanorobot using deep learning.**
+>
+> **利用深度学习反推光控 DNA Walker 纳米机器人物理参数。**
 
 ---
 
-# 🇨🇳 中文说明 (Chinese Version)
+## Table of Contents / 目录
 
-## 1. 项目背景与简介 (Introduction)
-本项目旨在解决 DNA 纳米机器人的**逆向设计问题**。
-在实验中，我们通常只能观测到纳米机器人的荧光动力学曲线（FAM, TYE, CY5 信号随时间的变化），但难以直接获知其微观的物理与动力学参数（如能量势垒、迁移速率等）。传统的手动调参拟合方法效率极低且依赖经验。
-
-本系统提供了一套自动化的解决方案：
-1.  利用 **MATLAB** 建立精确的物理化学模拟模型，批量生成通过物理法则推导出的“参数-曲线”数据集。
-2.  使用 **深度学习 (1D-CNN)** 训练一个逆向模型，学习“从荧光曲线推断微观参数”的映射关系。
-3.  输入真实的实验数据，系统即可**自动预测**出最符合实验现象的这 7 个关键物理参数。
-4.  最后通过 **MATLAB** 进行回带验证，画图确认预测结果的准确性。
-
-## 2. 核心功能 (Key Features)
-*   **物理模拟 (Simulation)**: 基于能量景观理论（Energy Landscape）和主方程（Master Equation）的动力学仿真。
-*   **自动筛选 (Auto-Filtering)**: 在数据生成阶段自动剔除无效、死锁或不发生反应的样本（Line 68-70 in gendata.m）。
-*   **深度推理 (Deep Inference)**: 使用一维卷积神经网络 (InverseCNN) 处理时序荧光信号，具有极高的推理速度（毫秒级）。
-*   **闭环验证 (closed-loop Verification)**: 预测 -> 仿真 -> 对比，形成完整的证据链。
-
-## 3. 预测参数说明 (Parameters)
-模型预测的 7 个核心物理参数如下：
-
-| 参数名 | 物理含义 | 典型范围 | 单位 |
-| :--- | :--- | :--- | :--- |
-| **`E_b`** | 结合能 (Binding Energy) | -2.0 ~ -0.5 | $k_BT$ |
-| **`E_b_azo_trans`** | 反式偶氮苯结合能 (Binding Energy, Trans) | -2.0 ~ 0.5 | $k_BT$ |
-| **`E_b_azo_cis`** | 顺式偶氮苯结合能 (Binding Energy, Cis) | -1.0 ~ 0.0 | $k_BT$ |
-| **`k_mig`** | 迁移速率常数 (Migration Rate) | 0.01 ~ 1.0 | $s^{-1}$ |
-| **`k0`** | 零力解离速率 (Leg Detachment Rate at Zero Force) | 1e-6 ~ 1e-4 | $s^{-1}$ |
-| **`drt_z`** | 拉链式解离耦合距离 (Coupling Distance, Unzipping) | 0.0 ~ 1.0 | nm |
-| **`drt_s`** | 剪切式解离耦合距离 (Coupling Distance, Shearing) | 0.0 ~ 1.0 | nm |
-
-## 4. 文件结构说明 (Files)
-
-### 核心脚本
-*   **`gendata.m`** (Matlab): **[步骤 1]** 数据生成脚本。
-    *   使用拉丁超立方采样 (LHS) 在指定范围内随机采样参数。
-    *   调用并行计算池 (Parpool) 进行大规模仿真。
-    *   结果保存为 `training_dataset.mat`。
-*   **`train_mlp.py`** (Python): **[步骤 2]** 模型训练脚本。
-    *   加载 .mat 数据，清洗、标准化。
-    *   训练 CNN 模型，保存最佳权重到 `results/best_mlp_model.pth`。
-*   **`verify.py`** (Python): **[步骤 3]** 推理与预测脚本。
-    *   读取实验数据 Excel 文件。
-    *   加载训练好的模型进行推理，输出预测参数。
-    *   自动生成 `matlab_input_params.txt` 供验证使用。
-*   **`verify.m`** (Matlab): **[步骤 4]** 验证脚本。
-    *   读取 `matlab_input_params.txt`。
-    *   再次运行高精度物理仿真。
-    *   绘制“实验数据点”与“预测模拟曲线”的对比图。
-
-### 配置文件与辅助
-*   **`configfile.ini`**: 全局配置文件。所有参数范围、文件路径、网络结构参数均在此修改。
-*   **`model.py`**: 定义 `InverseCNN` 神经网络结构。
-*   **`inference.py`**: 定义 `NanorobotPredictor` 类，封装了复杂的预测逻辑。
-*   **`utils.py`**: 数据预处理工具（对数变换、标准化、数据加载）。
-*   **`predict.py`**: 辅助脚本，被 `verify.py` 调用以加载真实数据。
-
-## 5. 详细使用教程 (Usage Tutorial)
-
-### 准备工作 (Prerequisites)
-1.  **MATLAB 环境**:
-    *   安装 MATLAB R2021b 或更新版本。
-    *   必须安装 **Parallel Computing Toolbox**（用于 `gendata.m` 并行加速）。
-2.  **Python 环境**:
-    *   建议使用 Anaconda 创建虚拟环境。
-    *   安装依赖:
-        ```bash
-        pip install torch numpy pandas scikit-learn matplotlib scipy openpyxl
-        ```
-3.  **实验数据**:
-    *   准备你的实验数据 Excel 文件（例如 `Fig3a_fitting.xlsx`）。
-    *   确保文件包含表头：`Time`, `FAM/FAM T (+)`, `TYE/TYE T (-)`, `CY5/CY5 T (m)`。
+- [Introduction / 简介](#introduction--简介)
+- [System Architecture / 系统架构](#system-architecture--系统架构)
+- [Directory Structure / 目录结构](#directory-structure--目录结构)
+- [Predicted Parameters / 预测参数说明](#predicted-parameters--预测参数说明)
+- [End-to-End Workflow / 端到端工作流](#end-to-end-workflow--端到端工作流)
+  - [Step 1: Data Generation (MATLAB) / 数据生成](#step-1-data-generation-matlab--数据生成)
+  - [Step 2: CNN Training / CNN 训练](#step-2-cnn-training--cnn-训练)
+  - [Step 3: Transformer Training / Transformer 训练](#step-3-transformer-training--transformer-训练)
+  - [Step 4: Autoencoder Training / 数字孪生训练](#step-4-autoencoder-training--数字孪生训练)
+  - [Step 5: Prediction / 预测](#step-5-prediction--预测)
+  - [Step 6: MATLAB Verification / MATLAB 验证](#step-6-matlab-verification--matlab-验证)
+- [Setup / 环境配置](#setup--环境配置)
+- [Configuration / 配置文件说明](#configuration--配置文件说明)
+- [HPC Guide / HPC 使用指南](#hpc-guide--hpc-使用指南)
 
 ---
 
-### Step 1: 生成训练数据 (Data Generation)
-**目的**: 让计算机通过大量模拟，学会“什么参数对应什么曲线”。
+## Introduction / 简介
 
-1.  打开 MATLAB。
-2.  打开 `gendata.m`。
-3.  (可选) 修改 `configfile.ini` 或脚本顶部的 `num_samples` (推荐 10000+)。
-4.  运行脚本。
-    *   *提示*: 首次运行会启动并行池（Parpool），可能需要几十秒。
-    *   *输出*: 脚本运行结束后，当前目录下会生成 **`training_dataset.mat`**。
+This project builds the complete machine learning pipeline for inverse design of a
+**light-controlled DNA Walker nanorobot**. Given three fluorescence intensity curves
+(FAM, TYE, CY5) measured experimentally, the system predicts 7 physical parameters
+that govern the walker's behavior using a 14-state Markov transition model.
 
-### Step 2: 训练模型 (Model Training)
-**目的**: 训练神经网络。
+本项目构建了**光控 DNA Walker 纳米机器人**逆向设计的完整机器学习流程。
+给定三条实验荧光曲线（FAM、TYE、CY5），系统基于 14 态马尔可夫跳转模型
+预测控制 Walker 行为的 7 个物理参数。
 
-1.  打开终端 (Terminal) 或 CMD。
-2.  切换到项目目录。
-3.  运行命令：
-    ```bash
-    python train_mlp.py
-    ```
-4.  **过程**:
-    *   程序会自动划分训练集/验证集。
-    *   你会看到 Loss（损失值）不断下降。
-    *   训练完成后，模型文件会保存在 `results/` 文件夹下 (`best_mlp_model.pth`)，同时保存归一化器 (`x_scaler.pkl`, `y_scaler.pkl`)。
+Two parallel model architectures are provided:
+| Model | Architecture | Input Shape | Strength |
+|-------|-------------|-------------|----------|
+| **CNN (MLP)** | 1D-Conv → FC → Sigmoid | `(N, 23403)` flattened | Fast, robust baseline |
+| **Transformer** | PatchTST + TokenMixer → Sigmoid | `(N, 3, 7801)` 3D | Global receptive field, explicit channel interaction |
 
-### Step 3: 预测参数 (Prediction)
-**目的**: 让模型看一眼你的实验数据，猜出背后的参数。
-
-1.  确保 `configfile.ini` 中的 `path_to_experimental_data_a` 指向你的 Excel 文件名。
-2.  运行命令：
-    ```bash
-    python verify.py
-    ```
-3.  **输出**:
-    *   屏幕上会打印出预测到的 7 个参数值。
-    *   当前目录下会生成一个文本文件 **`matlab_input_params.txt`**。
-
-### Step 4: 结果验证 (Verification)
-**目的**: 眼见为实，用预测出的参数跑一次模拟，看能不能重现实验现象。
-
-1.  打开 MATLAB。
-2.  (如果是在不同电脑上操作) 将 `matlab_input_params.txt` 复制到 MATLAB 的当前工作目录。
-3.  运行 `verify.m`。
-4.  **结果**:
-    *   MATLAB 会读取该 txt 文件中的参数。
-    *   运行一次精细的模拟。
-    *   **弹出窗口**: 显示三张图（FAM, TYE, CY5）。红/绿/蓝色实线是**预测结果**，散点是你的**原始实验数据**。
-    *   如果两者重合度高，说明反推成功！
+Both models also support an **Encoder-Decoder (Digital Twin)** training mode where
+a ForwardDecoder learns the forward mapping (parameters → curves) to provide an
+additional reconstruction loss signal.
 
 ---
 
-## 6. 常见问题 (Troubleshooting)
+## System Architecture / 系统架构
 
-*   **Q: 运行 `gendata.m` 时提示 `Out of Memory`？**
-    *   A: 请减小 `num_samples` 或者在代码中搜索 `batch_size` 并调小该值（默认 5000）。
-*   **Q: Python 提示 `ModuleNotFoundError`？**
-    *   A: 请检查是否漏装了库，通常是 `pip install torch pandas openpyxl`。
-*   **Q: 验证时的曲线完全对不上？**
-    *   A:
-        1.  检查 Excel 里的时间单位是否是**分钟 (min)**，代码默认按分钟读取但按秒模拟。
-        2.  检查 `configfile.ini` 里的 `sim_duration_minutes` 是否与实验时长一致。
-        3.  重新生成更多数据（Step 1）并重新训练（Step 2）。
+```mermaid
+flowchart LR
+    subgraph MATLAB ["MATLAB (Offline)"]
+        A["gendata.m<br/>ODE Simulation<br/>ODE 仿真"] --> B["training_dataset.npz<br/>(X: curves, Y: params)"]
+    end
+
+    subgraph Training ["Python Training / 训练"]
+        B --> C["CNN (train_cnn/)<br/>1D-CNN Inverse Model"]
+        B --> D["Transformer (train_transformer/)<br/>PatchTST + TokenMixer"]
+        C --> E["best_mlp_model.pth"]
+        D --> F["best_transformer_model.pth"]
+    end
+
+    subgraph Inference ["Prediction / 预测"]
+        G["Experimental Excel<br/>实验数据"] --> H["predict_cnn.py<br/>or predict_transformer.py"]
+        E --> H
+        F --> H
+        H --> I["matlab_input_params.txt"]
+    end
+
+    subgraph Verification ["MATLAB Verification / 验证"]
+        I --> J["verify.m<br/>Forward ODE<br/>正向 ODE 验证"]
+        J --> K["Predicted vs Experimental<br/>预测 vs 实验对比图"]
+    end
+```
 
 ---
+
+## Directory Structure / 目录结构
+
+```
+MachineLearning_for_DNAwalker/
+│
+├── configfile.ini              # 全局配置 / Global config (physics, training, data)
+├── config_loader.py            # 统一配置管理类 / Unified config manager
+├── README.md                   # 本文件 / This file
+├── requirements.txt            # Python 依赖 / Python dependencies
+│
+├── train_cnn/                  # ===== CNN (MLP) 模型 =====
+│   ├── model_cnn.py            #   InverseCNN + ForwardDecoder 模型定义 / Model definitions
+│   ├── data_loader.py          #   数据加载与预处理 / Data loading & preprocessing
+│   ├── train_mlp.py            #   主训练脚本 / Main training script
+│   ├── train_autoencoder.py    #   Encoder-Decoder 三阶段训练 / 3-phase Encoder-Decoder
+│   ├── inference_cnn.py        #   推理模块 / Inference module
+│   ├── predict_cnn.py          #   实验数据预测 / Experimental prediction
+│   ├── run_job.sh              #   HPC PBS 作业脚本 / HPC PBS job script
+│   └── results/                #   模型输出 / Model outputs
+│
+├── train_transformer/          # ===== Transformer 模型 =====
+│   ├── config_transformer.ini  #   Transformer 专用超参数 / Transformer-specific hyperparams
+│   ├── config_loader_transformer.py  #  配置加载器 / Config loader
+│   ├── model_transformer.py    #   PatchTST + TokenMixer 模型 / Model definition
+│   ├── dataset.py              #   3D 数据加载 / 3D data loading (X stays 3D)
+│   ├── train_transformer.py    #   主训练脚本 / Main training script
+│   ├── train_transformer_autoencoder.py  # Encoder-Decoder 训练 / Encoder-Decoder
+│   ├── inference_transformer.py #  推理模块 / Inference module
+│   ├── predict_transformer.py  #   实验数据预测 / Experimental prediction
+│   ├── run_job.sh              #   HPC PBS 作业脚本 / HPC PBS job script
+│   ├── run_autoencoder_job.sh  #   Autoencoder HPC 脚本 / Autoencoder HPC script
+│   └── results/                #   模型输出 / Model outputs
+│
+├── utils/                      # ===== 工具脚本 / Utility Scripts =====
+│   ├── check_npz.py            #   NPZ 数据集检查 / NPZ dataset inspector
+│   ├── mat_to_npz.py           #   MATLAB→NPZ 转换 / MATLAB to NPZ converter
+│   └── stretch_data.py         #   实验数据振幅拉伸 / Experimental data stretching
+│
+├── gendata.m                   # MATLAB 数据生成脚本 / MATLAB data generation
+├── verify.m                    # MATLAB 正向验证脚本 / MATLAB forward verification
+├── optimize_params.m           # MATLAB 优化脚本 / MATLAB optimization
+│
+└── results/                    # 共用数据集 / Shared datasets
+    ├── training_dataset.npz    #   训练数据 / Training data
+    ├── y_scaler.pkl            #   Y 归一化器 / Y scaler
+    └── best_mlp_model.pth      #   CNN 最佳模型 / CNN best model
+```
+
 ---
 
-# 🇺🇸 English Guide (English Version)
+## Predicted Parameters / 预测参数说明
 
-## 1. Introduction
-This project automates the **inverse design** of DNA nanorobots.
-Experimentalists typically observe fluorescence kinetics (FAM, TYE, CY5 curves) but struggle to determine the underlying microscopic parameters (e.g., Binding Energy, Migration Rate).
+| Parameter | Physical Meaning / 物理含义 | Unit / 单位 | Log Transform |
+|-----------|---------------------------|-------------|---------------|
+| `E_b` | Base binding energy / 基础结合能 | eV | No |
+| `E_b_azo_trans` | Trans-azobenzene binding energy / 反式偶氮苯结合能 | eV | No |
+| `E_b_azo_cis` | Cis-azobenzene binding energy / 顺式偶氮苯结合能 | eV | No |
+| `k_mig` | Leg migration rate / 腿迁移速率 | s⁻¹ | No |
+| `k0` | Intrinsic unbinding rate / 固有解绑速率 | s⁻¹ | ✅ `log10` |
+| `drt_z` | Z-track duty ratio / Z 轨道占空比 | — | No |
+| `drt_s` | S-track duty ratio / S 轨道占空比 | — | No |
 
-This system solves this by:
-1.  **Simulating** massive datasets of "Parameter-to-Curve" pairs using MATLAB.
-2.  **Training** a Deep Learning model (1D-CNN) to learn the inverse mapping (Curve-to-Parameter).
-3.  **Predicting** the 7 key physical parameters from your real experimental data.
-4.  **Verifying** the result by running a simulation with the predicted parameters to see if it reproduces the experiment.
+---
 
-## 2. Key Features
-*   **Physics-based Simulation**: Accurate kinetic modeling based on Energy Landscapes.
-*   **Deep Inference**: Millisecond-level parameter prediction using InverseCNN.
-*   **Automated Workflow**: From raw Excel data to verified simulation plots.
+## End-to-End Workflow / 端到端工作流
 
-## 3. Predicted Parameters
-The model predicts the following 7 parameters:
+### Step 1: Data Generation (MATLAB) / 数据生成
 
-| Parameter | Meaning | Typical Range | Unit |
-| :--- | :--- | :--- | :--- |
-| **`E_b`** | Binding Energy | -2.0 ~ -0.5 | $k_BT$ |
-| **`E_b_azo_trans`** | Binding Energy (Trans-Azo) | -2.0 ~ 0.5 | $k_BT$ |
-| **`E_b_azo_cis`** | Binding Energy (Cis-Azo) | -1.0 ~ 0.0 | $k_BT$ |
-| **`k_mig`** | Migration Rate | 0.01 ~ 1.0 | $s^{-1}$ |
-| **`k0`** | Leg Detachment Rate | 1e-6 ~ 1e-4 | $s^{-1}$ |
-| **`drt_z`** | Splitting Dist. (Unzipping) | 0.0 ~ 1.0 | nm |
-| **`drt_s`** | Splitting Dist. (Shearing) | 0.0 ~ 1.0 | nm |
+Use `gendata.m` to generate synthetic training data via ODE simulation:
 
-## 4. File Structure (Files)
+使用 `gendata.m` 通过 ODE 仿真生成合成训练数据：
 
-### Core Scripts
-*   **`gendata.m`** (Matlab): **[Step 1]** Data generation script.
-    *   Uses Latin Hypercube Sampling (LHS) to sample parameters within specified ranges.
-    *   Utilizes a Parallel Computing Pool (Parpool) for large-scale simulations.
-    *   Saves results to `training_dataset.mat`.
-*   **`train_mlp.py`** (Python): **[Step 2]** Model training script.
-    *   Loads the .mat dataset, performs cleaning and standardization.
-    *   Trains the CNN model and saves the best weights to `results/best_mlp_model.pth`.
-*   **`verify.py`** (Python): **[Step 3]** Inference and prediction script.
-    *   Reads the experimental data Excel file.
-    *   Loads the trained model for inference and outputs the predicted parameters.
-    *   Automatically generates `matlab_input_params.txt` for verification.
-*   **`verify.m`** (Matlab): **[Step 4]** Verification script.
-    *   Reads `matlab_input_params.txt`.
-    *   Runs a high-precision physical simulation based on the predicted parameters.
-    *   Plots a comparison graph between "Experimental Data Points" and the "Predicted Simulation Curve".
+```matlab
+% In MATLAB / 在 MATLAB 中
+gendata   % Generates training_dataset.mat → convert via mat_to_npz.py
+```
 
-### Configuration & Helpers
-*   **`configfile.ini`**: Global configuration file. All parameter ranges, file paths, and network architecture settings are modified here.
-*   **`model.py`**: Defines the `InverseCNN` neural network architecture.
-*   **`inference.py`**: Defines the `NanorobotPredictor` class, encapsulating complex prediction logic.
-*   **`utils.py`**: Data preprocessing tools (Log transformation, Standardization, Data loading).
-*   **`predict.py`**: Helper script called by `verify.py` to load real data.
+```powershell
+# Convert to NPZ / 转换为 NPZ 格式
+cd utils/
+python mat_to_npz.py ../path/to/training_dataset.mat
+```
 
-## 5. Work Flow Details
+**Output / 输出:** `results/training_dataset.npz` containing `X(N, 3, 7801)` curves and `Y(N, 7)` parameters.
 
-### Prerequisites
-*   **MATLAB**: R2021b+ with Parallel Computing Toolbox.
-*   **Python**: 3.8+ (`pip install torch numpy pandas scikit-learn matplotlib scipy openpyxl`).
+---
 
-### Step-by-Step Guide
+### Step 2: CNN Training / CNN 训练
 
-#### Step 1: Data Generation (`gendata.m`)
-Open MATLAB and run `gendata.m`.
-*   This uses Latin Hypercube Sampling (LHS) to explore the parameter space.
-*   It runs simulations in parallel.
-*   **Output**: `training_dataset.mat`.
+```powershell
+cd train_cnn/
+python train_mlp.py
+```
 
-#### Step 2: Model Training (`train_mlp.py`)
-Run in terminal: `python train_mlp.py`
-*   Loads the `.mat` dataset.
-*   Trains the Neural Network.
-*   **Output**: Saves model to `results/best_mlp_model.pth`.
+- Uses AdaptiveWeightedMSE loss with ReduceLROnPlateau scheduler.
+- 使用自适应加权 MSE 损失 + ReduceLROnPlateau 学习率调度。
+- **Output / 输出:** `results/best_mlp_model.pth`, `results/y_scaler.pkl`
 
-#### Step 3: Parameter Prediction (`verify.py`)
-Run in terminal: `python verify.py`
-*   Input: Your experimental Excel file (set path in `configfile.ini`).
-*   Inference: Predicts the 7 parameters.
-*   **Output**: Generates **`matlab_input_params.txt`**.
+---
 
-#### Step 4: Verification (`verify.m`)
-Open MATLAB and run `verify.m`.
-*   It reads `matlab_input_params.txt`.
-*   Runs a high-precision simulation using these parameters.
-*   **Plot**: Overlays the simulation result (lines) on top of your experimental data (dots).
-*   **Success**: If the lines match the dots, the prediction is accurate.
+### Step 3: Transformer Training / Transformer 训练
 
-## 6. Troubleshooting
-*   **Memory Errors in MATLAB**: Reduce `num_samples` or the batch size in `gendata.m`.
-*   **Python Imports**: Ensure you are in the correct directory having `utils.py`, `model.py`, etc.
-*   **Poor Fit**:
-    1.  Check if your experimental time units match the simulation (minutes).
-    2.  Increase `num_samples` in Step 1 and retrain.
+```powershell
+cd train_transformer/
+python train_transformer.py              # Full training / 正式训练
+python train_transformer.py --smoke      # Smoke test / 烟雾测试
+```
+
+- Uses AdamW optimizer with Cosine Warmup scheduler.
+- TokenMixer replaces Multi-Head Attention for O(B×T×D) complexity.
+- 使用 AdamW 优化器 + Cosine Warmup 学习率调度。
+- TokenMixer 替换多头注意力，复杂度降至 O(B×T×D)。
+- **Output / 输出:** `results/best_transformer_model.pth`
+
+---
+
+### Step 4: Autoencoder Training / 数字孪生训练
+
+The Encoder-Decoder ("Digital Twin") training adds a reconstruction loss:
+
+数字孪生训练添加重构损失：
+
+```
+Phase 1: Train ForwardDecoder independently    → Y → X̂ (forward surrogate)
+Phase 2: Freeze Decoder, train Encoder         → X → Ŷ → [Frozen] → X̂
+Phase 3: (Optional) Joint fine-tuning          → end-to-end with lower LR
+```
+
+```powershell
+# CNN Autoencoder / CNN 自编码器
+cd train_cnn/
+python train_autoencoder.py
+
+# Transformer Autoencoder / Transformer 自编码器
+cd train_transformer/
+python train_transformer_autoencoder.py
+python train_transformer_autoencoder.py --resume   # Resume from checkpoint / 断点续训
+```
+
+---
+
+### Step 5: Prediction / 预测
+
+```powershell
+# CNN prediction / CNN 预测
+cd train_cnn/
+python predict_cnn.py
+
+# Transformer prediction / Transformer 预测
+cd train_transformer/
+python predict_transformer.py
+```
+
+Pipeline: Load Excel → Interpolation → SG Smoothing → DL Prediction (Test-Time Ensemble) → Nelder-Mead Refinement → `matlab_input_params.txt`
+
+流程：加载 Excel → 插值 → SG 平滑 → DL 预测（测试时集成）→ Nelder-Mead 微调 → `matlab_input_params.txt`
+
+---
+
+### Step 6: MATLAB Verification / MATLAB 验证
+
+```matlab
+% In MATLAB / 在 MATLAB 中
+verify    % Reads matlab_input_params.txt, runs forward ODE, plots comparison
+```
+
+This runs the forward ODE simulation with the predicted parameters and overlays the result on the experimental curves for visual verification.
+
+使用预测参数运行正向 ODE 仿真，并与实验曲线叠加对比以进行目视验证。
+
+---
+
+## Setup / 环境配置
+
+```powershell
+# Create conda environment / 创建 conda 环境
+conda create -n dna_env python=3.10
+conda activate dna_env
+
+# Install PyTorch (CUDA 12.4) / 安装 PyTorch
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+
+# Install other dependencies / 安装其他依赖
+pip install -r requirements.txt
+```
+
+**Key dependencies / 关键依赖:** `torch`, `numpy`, `scipy`, `scikit-learn`, `pandas`, `openpyxl`, `h5py`
+
+---
+
+## Configuration / 配置文件说明
+
+### `configfile.ini` (Root / 根目录)
+
+Global configuration shared by both CNN and Transformer:
+
+CNN 和 Transformer 共用的全局配置：
+
+| Section | Contents / 内容 |
+|---------|----------------|
+| `[TRAINING]` | Learning rate, batch size, epochs, scheduler, dataset split / 学习率、批次、轮数等 |
+| `[MODEL_ARCHITECTURE]` | CNN Conv/FC layer params / CNN 卷积/全连接层参数 |
+| `[DATA_PROCESSING]` | Log transform, NaN cleanup, amplitude filter / 对数变换、数据清洗 |
+| `[DATA_GENERATION]` | Output filename / 输出文件名 |
+| `[PHYSICAL_PARAMETERS]` | Fixed/trainable params / 固定/可训练参数 |
+| `[TRAINING_PARAMETER_RANGES]` | Min-max ranges / 参数范围 |
+| `[NANOROBOT_MODELING]` | Experimental data path, simulation time / 实验数据路径、仿真时间 |
+| `[PREDICTION]` | SG smoothing, Test-Time Ensemble, Nelder-Mead / SG 平滑、集成预测、NM 微调 |
+| `[AUTOENCODER]` | Decoder training, loss weights / Decoder 训练、损失权重 |
+
+### `config_transformer.ini` (train_transformer/)
+
+Transformer-specific hyperparameters:
+
+| Section | Contents / 内容 |
+|---------|----------------|
+| `[TRANSFORMER]` | d_model, n_heads, n_layers, patch_size, dropout, optimizer / 模型结构、优化器 |
+| `[PATHS]` | Dataset file path / 数据集路径 |
+| `[AUTOENCODER]` | Transformer autoencoder params / Transformer 自编码器参数 |
+
+---
+
+## HPC Guide / HPC 使用指南
+
+All training scripts include PBS job scripts for HPC clusters:
+
+所有训练脚本都包含 PBS 作业脚本：
+
+```powershell
+# CNN training on HPC / HPC 上训练 CNN
+cd train_cnn/
+qsub run_job.sh
+
+# Transformer training on HPC / HPC 上训练 Transformer
+cd train_transformer/
+qsub run_job.sh
+
+# Transformer autoencoder with checkpointing / Transformer 自编码器（支持断点续训）
+qsub run_autoencoder_job.sh
+```
+
+The Transformer autoencoder script (`train_transformer_autoencoder.py`) supports:
+- `--resume`: Resume from last checkpoint / 从断点恢复
+- `--max-hours 23`: Auto-save before HPC wall-time limit / 接近时限自动保存
+- `--enable-phase3`: Enable optional Phase 3 joint fine-tuning / 启用 Phase 3
+
+---
+
+## Model Architecture Comparison / 模型架构对比
+
+|  | CNN (`train_cnn/`) | Transformer (`train_transformer/`) |
+|--|---|---|
+| **Input / 输入** | `(N, 23403)` flattened / 展平 | `(N, 3, 7801)` 3D |
+| **Long-range / 长程依赖** | ❌ Local receptive field / 局部感受野 | ✅ Global via TokenMixer / 全局 |
+| **Channel relation / 通道关系** | Implicit fusion / 隐式融合 | Explicit Cross-Channel Attention / 显式 |
+| **Optimizer / 优化器** | Adam | AdamW |
+| **LR Schedule / 学习率调度** | ReduceLROnPlateau | Cosine Warmup |
+| **Parameters / 参数量** | ~7M | ~4.5M |
+
+---
+
+## Normalization Strategy / 归一化策略
+
+Both models use the same **Domain Invariant** normalization:
+
+两个模型使用相同的 **Domain Invariant** 归一化策略：
+
+- **X (curves):** Per-sample joint-channel z-score normalization
+  - 单样本联合通道 z-score 归一化
+  - `X_norm = (X - μ_sample) / σ_sample` across all 3 channels jointly
+- **Y (params):** MinMaxScaler to [0.1, 0.9] (Safe Sigmoid Lock)
+  - MinMaxScaler 缩放至 [0.1, 0.9]，配合 Sigmoid 输出避免梯度死区
+- **k0:** log10 transform before scaling to handle large dynamic range
+  - 先 log10 变换再缩放，处理大动态范围

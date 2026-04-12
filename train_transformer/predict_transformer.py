@@ -1,8 +1,10 @@
 # coding=utf-8
 """
-predict_transformer.py  —  DNA Walker Transformer 实验数据预测脚本
+predict_transformer.py — Transformer 实验数据预测脚本
+predict_transformer.py — Transformer experimental data prediction script
 
-与主目录的 predict.py 逻辑一致，但使用 Transformer 模型进行推理。
+与 CNN predict_cnn.py 逻辑一致，但使用 Transformer 模型推理。
+Same logic as CNN predict_cnn.py, but uses Transformer model for inference.
 """
 
 import os
@@ -13,7 +15,7 @@ import pandas as pd
 from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter
 
-# ── 路径设置：确保可以从 train_transformer/ 目录运行 ──
+# 路径设置 / Path setup
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PARENT_DIR = os.path.dirname(_THIS_DIR)
 if _PARENT_DIR not in sys.path:
@@ -24,13 +26,13 @@ if _THIS_DIR not in sys.path:
 from inference_transformer import TransformerPredictor
 
 # --- 全局常量 ---
-MATLAB_INPUT_FILE = "matlab_input_params_transformer.txt"
+MATLAB_INPUT_FILE = os.path.join(_PARENT_DIR, "matlab_input_params.txt")
 
 
 def load_real_experimental_data(config, data_path):
     """
-    加载并预处理真实实验数据（插值 + SG平滑）。
-    逻辑直接复用自根目录 predict.py。
+    加载并预处理真实实验数据（插值 + SG 平滑）。
+    Load and preprocess real experimental data (interpolation + SG smoothing).
     """
     print(f"--- 1. 正在加载并预处理真实实验数据: {data_path} ---")
 
@@ -63,14 +65,16 @@ def load_real_experimental_data(config, data_path):
     curve_tye = interp_tye_func(standard_time_axis)
     curve_cy5 = interp_cy5_func(standard_time_axis)
 
-    # SG 平滑 (window=61, polyorder=3)
+    # SG 平滑 (from config) / SG smoothing (from config)
+    sg_window = config.get_sg_window()
+    sg_poly = config.get_sg_polyorder()
     try:
-        curve_fam = savgol_filter(curve_fam, 61, 3)
-        curve_tye = savgol_filter(curve_tye, 61, 3)
-        curve_cy5 = savgol_filter(curve_cy5, 61, 3)
-        print("Savitzky-Golay 平滑完成。")
-    except:
-        print("警告: SG 平滑失败，使用原始插值。")
+        curve_fam = savgol_filter(curve_fam, sg_window, sg_poly)
+        curve_tye = savgol_filter(curve_tye, sg_window, sg_poly)
+        curve_cy5 = savgol_filter(curve_cy5, sg_window, sg_poly)
+        print(f"SG 平滑完成 / SG smoothing done (window={sg_window}, poly={sg_poly})")
+    except Exception as e:
+        print(f"警告 / Warning: SG 平滑失败 / SG smoothing failed: {e}")
 
     return np.stack([curve_fam, curve_tye, curve_cy5], axis=0)  # (3, 7801)
 

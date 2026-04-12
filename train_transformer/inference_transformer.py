@@ -1,8 +1,10 @@
 # coding=utf-8
 """
-inference_transformer.py  —  DNA Walker Transformer 推理模块
+inference_transformer.py — Transformer 推理模块
+inference_transformer.py — Transformer inference module
 
-封装了加载 Transformer 模型、预处理器（y_scaler）以及执行推理的逻辑。
+封装模型加载、预处理和推理逻辑。
+Encapsulates model loading, preprocessing, and inference logic.
 """
 
 import os
@@ -11,7 +13,7 @@ import torch
 import numpy as np
 import pickle
 
-# ── 路径设置：确保可以导入相邻模块和上层模块 ──
+# 路径设置 / Path setup
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PARENT_DIR = os.path.dirname(_THIS_DIR)
 if _PARENT_DIR not in sys.path:
@@ -24,7 +26,8 @@ from model_transformer import build_transformer
 
 class TransformerPredictor:
     """
-    DNA Walker Transformer 预测器类
+    Transformer 预测器：加载训练好的模型并执行推理。
+    Transformer predictor: loads a trained model and performs inference.
     """
     def __init__(self, model_path=None):
         print("--- 正在初始化 Transformer 预测器 ---")

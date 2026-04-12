@@ -2,28 +2,28 @@ clc
 clear
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%      optimize_params.m - 物理模型参数精细优化工具
+%      optimize_params.m - 物理模型参数精细优化工具 / Fine-tuning tool for physical model parameters
 %
-%  流程：
-%    1. 从 matlab_input_params.txt 读取 ML 预测的初始参数
-%    2. 读取实验数据 (Fig3a_fitting.xlsx)
-%    3. 用 fminsearch 在物理模型仿真的基础上优化参数
-%    4. 输出优化后的参数到 optimized_params.txt
-%    5. 绘制优化后的对比图
+%  流程 / Flow：
+%    1. 从 matlab_input_params.txt 读取 ML 预测的初始参数 / Read initial ML-predicted params
+%    2. 读取实验数据 (Fig3a_fitting.xlsx) / Read experimental data
+%    3. 用 fminsearch 在物理模型仿真的基础上优化参数 / Optimize params using fminsearch
+%    4. 输出优化后的参数到 optimized_params.txt / Output optimized params
+%    5. 绘制优化后的对比图 / Plot optimized comparison
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% ============================================================
-%  1. 读取 ML 初始参数
+%  1. 读取 ML 初始参数 / Read ML initial parameters
 %% ============================================================
 
 input_file = 'matlab_input_params.txt';
 
 if ~exist(input_file, 'file')
-    error('错误: 未找到输入文件 %s。请先运行 predict.py 生成参数文件!', input_file);
+    error('错误: 未找到输入文件 %s。请先运行 predict.py 生成参数文件! / Error: Input file %s not found. Run predictor first!', input_file);
 end
 
-fprintf('--- 1. 从 %s 读取初始参数 ---\n', input_file);
+fprintf('--- 1. 从 %s 读取初始参数 / Reading initial parameters from %s ---\n', input_file);
 fid = fopen(input_file, 'r');
 params = struct();
 
@@ -41,29 +41,29 @@ while ~feof(fid)
 end
 fclose(fid);
 
-% 提取初始参数向量 (fminsearch 用的是向量格式)
+% 提取初始参数向量 (fminsearch 用的是向量格式) / Extract initial parameter vector
 % param_vec = [E_b, E_b_azo_trans, E_b_azo_cis, k0, k_mig, drt_z, drt_s]
 x0 = [params.e_b, params.e_b_azo_trans, params.e_b_azo_cis, ...
       params.k0,  params.k_mig,         params.drt_z,       params.drt_s];
 
-fprintf('\n初始参数读取完成 (7个参数):\n');
+fprintf('\n初始参数读取完成 / Initial parameters read successfully (7 个参数/parameters):\n');
 fprintf('  e_b=%.4f  e_b_azo_trans=%.4f  e_b_azo_cis=%.4f\n', x0(1), x0(2), x0(3));
 fprintf('  k0=%.4e  k_mig=%.4f  drt_z=%.4f  drt_s=%.4f\n\n', x0(4), x0(5), x0(6), x0(7));
 
 %% ============================================================
-%  2. 读取实验数据（计算 MSE 用的目标数据）
+%  2. 读取实验数据（计算 MSE 用的目标数据） / Read experimental data (Target data for MSE calculation)
 %% ============================================================
 
 exp_data_file = 'Fig3a_fitting.xlsx';
 if ~exist(exp_data_file, 'file')
     error('错误: 未找到实验数据 %s', exp_data_file);
 end
-fprintf('--- 2. 读取实验数据 %s ---\n', exp_data_file);
+fprintf('--- 2. 读取实验数据 / Reading experimental data %s ---\n', exp_data_file);
 
 exp_data = readtable(exp_data_file);
 exp_time = exp_data.Time;
 
-% 提取各通道实验数据（兼容多种列名格式）
+% 提取各通道实验数据（兼容多种列名格式） / Extract channel data (compatible across formats)
 if ismember('FAM_FAMT__', exp_data.Properties.VariableNames)
     exp_fam = exp_data.FAM_FAMT__;
 elseif ismember('x_FAM_FAMT__', exp_data.Properties.VariableNames)
@@ -88,11 +88,11 @@ else
     exp_cy5 = exp_data{:, 4};
 end
 
-fprintf('实验数据读取完成: %d 个时间点\n', length(exp_time));
+fprintf('实验数据读取完成 / Experimental data read successfully: %d 个时间点 / time points\n', length(exp_time));
 
 % -----------------------------------------------------------------
-% ② 去掉明显的离群点（测量故障 / 尾部漂移点）
-% 只保留时间在 [0, 130] 分钟范围内，且各通道信号在物理合理范围内的点
+% ② 去掉明显的离群点（测量故障 / 尾部漂移点） / Remove obvious outliers (measurement faults/drift)
+% 只保留时间在 [0, 130] 分钟范围内，且各通道信号在物理合理范围内的点 / Filter by validity bounds
 % -----------------------------------------------------------------
 valid_mask = exp_time >= 0 & exp_time <= 130 ...
            & exp_fam > 0.5 & exp_fam < 1.0 ...
@@ -104,10 +104,10 @@ exp_time = exp_time(valid_mask);
 exp_fam  = exp_fam(valid_mask);
 exp_tye  = exp_tye(valid_mask);
 exp_cy5  = exp_cy5(valid_mask);
-fprintf('离群点过滤: 移除 %d 个点，保留 %d 个有效时间点\n\n', n_removed, length(exp_time));
+fprintf('离群点过滤: 移除 %d 个点，保留 %d 个有效时间点 / Outlier filtering: Removed %d points, kept %d valid points\n\n', n_removed, length(exp_time));
 
 %% ============================================================
-%  3. 定义物理约束边界（防止优化跑野）
+%  3. 定义物理约束边界（防止优化跑野） / Define physical constraints (Prevent divergent optimization)
 %% ============================================================
 
 % [E_b,   E_b_azo_trans, E_b_azo_cis,  k0,     k_mig, drt_z, drt_s]
@@ -115,20 +115,20 @@ lb = [-1.4, -1.2,          -0.18,         2e-6,   0.03,  0.35,  0.02];
 ub = [-1.0, -0.8,          -0.03,         2e-5,   0.10,  0.75,  0.10];
 
 %% ============================================================
-%  4. 定义目标函数（运行物理仿真并计算 MSE）
+%  4. 定义目标函数（运行物理仿真并计算 MSE） / Define objective function (Run simulation and calc. MSE)
 %% ============================================================
 
-% 使用计数器跟踪优化进度
+% 使用计数器跟踪优化进度 / Use counter to track optimization progress
 eval_count = 0;
 best_mse   = inf;
 
-fprintf('--- 3. 开始 fminsearch 物理优化 ---\n');
-fprintf('(这可能需要数分钟，每次 MSE 更新时会打印进度)\n\n');
+fprintf('--- 3. 开始 fminsearch 物理优化 / Starting fminsearch physical optimization ---\n');
+fprintf('(这可能需要数分钟，每次 MSE 更新时会打印进度 / This takes several minutes...)\n\n');
 
 % -----------------------------------------------------------------
-% 预计算各通道的线性漂移（polyfit 1阶）
-% 优化器对比的是去除漂移后的浮动形状，而不是绝对值
-% 这样 FAM/CY5 的盐戒漂移就不会干扰参数估计
+% 预计算各通道的线性漂移（polyfit 1阶） / Precalculate linear drift
+% 优化器对比的是去除漂移后的浮动形状，而不是绝对值 / Optimizer compares detrended shape
+% 这样 FAM/CY5 的盐戒漂移就不会干扰参数估计 / Drift does not interfere with parameter estimation
 % -----------------------------------------------------------------
 p_drift_fam = polyfit(exp_time, exp_fam, 1);
 p_drift_tye = polyfit(exp_time, exp_tye, 1);
@@ -139,17 +139,17 @@ fprintf('  FAM 相对倒 = %+.6f/min\n', p_drift_fam(1));
 fprintf('  TYE 相对倒 = %+.6f/min\n', p_drift_tye(1));
 fprintf('  CY5 相对倒 = %+.6f/min\n\n', p_drift_cy5(1));
 
-% 计算实验数据的去趋势切除局部平均十则不与实验相差，不影响整体形状
-% 第一点偏移量（拦截至 t=0）保存不变，只去掉随时间的线性漂移
+% 计算实验数据的去趋势切除局部平均十则不与实验相差，不影响整体形状 / Calculate detrended experimental data
+% 第一点偏移量（拦截至 t=0）保存不变，只去掉随时间的线性漂移 / Preserve initial offset, remove linear drift
 exp_fam_d = exp_fam - polyval(p_drift_fam, exp_time) + p_drift_fam(2);
 exp_tye_d = exp_tye - polyval(p_drift_tye, exp_time) + p_drift_tye(2);
 exp_cy5_d = exp_cy5 - polyval(p_drift_cy5, exp_time) + p_drift_cy5(2);
 
-% 将去趋实验数据和各通道多项式系数一起传给目标函数
+% 将去趋实验数据和各通道多项式系数一起传给目标函数 / Pass detrended data to objective function
 objective = @(x) compute_sim_mse(x, exp_time, exp_fam_d, exp_tye_d, exp_cy5_d, ...
                                   p_drift_fam, p_drift_tye, p_drift_cy5, lb, ub);
 
-% 运行优化器
+% 运行优化器 / Run optimizer
 options = optimset( ...
     'MaxIter',   2000,  ...   % 最大迭代次数
     'MaxFunEvals', 20000, ... % 最大函数评估次数
@@ -160,16 +160,16 @@ options = optimset( ...
 
 [x_opt, mse_opt, exitflag, output] = fminsearch(objective, x0, options);
 
-% 将优化结果裁剪到物理边界内（fminsearch不做边界约束，依靠惩罚函数）
+% 将优化结果裁剪到物理边界内（fminsearch不做边界约束，依靠惩罚函数） / Clip results to physical bounds
 x_opt = max(lb, min(ub, x_opt));
 
-fprintf('\n--- 优化完成! ---\n');
-fprintf('退出状态: %d  (1=收敛, 0=未收敛)\n', exitflag);
-fprintf('迭代次数: %d  函数评估: %d\n', output.iterations, output.funcCount);
-fprintf('最终 MSE: %.6e\n\n', mse_opt);
+fprintf('\n--- 优化完成! / Optimization Finished! ---\n');
+fprintf('退出状态 / Exit flag: %d  (1=收敛/Converged, 0=未收敛/Unconverged)\n', exitflag);
+fprintf('迭代次数 / Iterations: %d  函数评估 / Func Evals: %d\n', output.iterations, output.funcCount);
+fprintf('最终 / Final MSE: %.6e\n\n', mse_opt);
 
 %% ============================================================
-%  5. 打印参数对比（优化前 vs 优化后）
+%  5. 打印参数对比（优化前 vs 优化后） / Render parameter comparison
 %% ============================================================
 
 param_names = {'e_b', 'e_b_azo_trans', 'e_b_azo_cis', 'k0', 'k_mig', 'drt_z', 'drt_s'};
@@ -184,7 +184,7 @@ end
 fprintf('%s\n\n', repmat('=', 1, 58));
 
 %% ============================================================
-%  6. 将优化后的参数写入 optimized_params.txt
+%  6. 将优化后的参数写入 optimized_params.txt / Write optimized params to file
 %% ============================================================
 
 output_file = 'optimized_params.txt';
@@ -202,7 +202,7 @@ fclose(fid);
 fprintf('优化后的参数已保存至: %s\n\n', output_file);
 
 %% ============================================================
-%  7. 用优化后参数再跑一次完整仿真并绘图
+%  7. 用优化后参数再跑一次完整仿真并绘图 / Run full simulation with optimized params and plot
 %% ============================================================
 
 fprintf('--- 4. 用优化参数绘制最终对比图 ---\n');
@@ -213,7 +213,7 @@ sim_fam  = result_signal(:, 2);
 sim_tye  = result_signal(:, 3);
 sim_cy5  = result_signal(:, 4);
 
-% 插值计算 RMSE
+% 插值计算 RMSE / Interpolate and calculate RMSE
 exp_fam_interp = interp1(exp_time, exp_fam, sim_time, 'linear', 'extrap');
 exp_tye_interp = interp1(exp_time, exp_tye, sim_time, 'linear', 'extrap');
 exp_cy5_interp = interp1(exp_time, exp_cy5, sim_time, 'linear', 'extrap');
@@ -221,7 +221,7 @@ exp_cy5_interp = interp1(exp_time, exp_cy5, sim_time, 'linear', 'extrap');
 rmse_fam  = sqrt(mean((sim_fam - exp_fam_interp).^2, 'omitnan'));
 rmse_tye  = sqrt(mean((sim_tye - exp_tye_interp).^2, 'omitnan'));
 rmse_cy5  = sqrt(mean((sim_cy5 - exp_cy5_interp).^2, 'omitnan'));
-rmse_init = 0;  % 已用 mse_opt 替代，不再重新跑初始仿真（节省时间）
+rmse_init = 0;  % 已用 mse_opt 替代，不再重新跑初始仿真（节省时间） / Replaced by mse_opt, avoiding initial sim rerun
 
 fprintf('\n=== 拟合误差 RMSE ===\n');
 fprintf('FAM RMSE: %.6f\n', rmse_fam);
@@ -259,7 +259,7 @@ fprintf('程序运行完成!\n');
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% ============================================================
-%  辅助函数 1: 计算物理仿真 MSE（供 fminsearch 调用）
+%  辅助函数 1: 计算物理仿真 MSE（供 fminsearch 调用） / Helper 1: Calc Physical Sim MSE (for fminsearch)
 %% ============================================================
 
 function mse = compute_sim_mse(x, exp_time, exp_fam_d, exp_tye_d, exp_cy5_d, ...
@@ -285,18 +285,18 @@ function mse = compute_sim_mse(x, exp_time, exp_fam_d, exp_tye_d, exp_cy5_d, ...
     sim_tye  = result_signal(:, 3);
     sim_cy5  = result_signal(:, 4);
 
-    % 插值到实验时间点
+    % 插值到实验时间点 / Interpolate to experimental time points
     sim_fam_interp = interp1(sim_time, sim_fam, exp_time, 'linear', 'extrap');
     sim_tye_interp = interp1(sim_time, sim_tye, exp_time, 'linear', 'extrap');
     sim_cy5_interp = interp1(sim_time, sim_cy5, exp_time, 'linear', 'extrap');
 
-    % 对仿真信号去除同样的线性漂移（t=0 截距保持不变）
-    % 这样 diff = (sim_detrended) - (exp_detrended)，漂移正好相消
+    % 对仿真信号去除同样的线性漂移（t=0 截距保持不变） / Remove same linear drift from simulation signal
+    % 这样 diff = (sim_detrended) - (exp_detrended)，漂移正好相消 / Drifts cancel out exactly
     sim_fam_d = sim_fam_interp - polyval(p_drift_fam, exp_time) + p_drift_fam(2);
     sim_tye_d = sim_tye_interp - polyval(p_drift_tye, exp_time) + p_drift_tye(2);
     sim_cy5_d = sim_cy5_interp - polyval(p_drift_cy5, exp_time) + p_drift_cy5(2);
 
-    % Huber Loss（对去趋势后的信号计算）
+    % Huber Loss（对去趋势后的信号计算） / Huber Loss (calculated on detrended signal)
     delta = 0.015;
     diff_fam = sim_fam_d - exp_fam_d;
     diff_tye = sim_tye_d - exp_tye_d;
@@ -311,18 +311,18 @@ function mse = compute_sim_mse(x, exp_time, exp_fam_d, exp_tye_d, exp_cy5_d, ...
     hl_tye = huber(diff_tye);
     hl_cy5 = huber(diff_cy5);
 
-    % 加权 Huber Loss（CY5 ×2）
+    % 加权 Huber Loss（CY5 ×2） / Weighted Huber Loss (CY5 x2)
     mse = (hl_fam + hl_tye + 2.0 * hl_cy5) / 4.0;
 end
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% ============================================================
-%  辅助函数 2: 运行完整物理仿真（从 verify.m 提取的核心代码）
+%  辅助函数 2: 运行完整物理仿真（从 verify.m 提取的核心代码） / Helper 2: Run full physical sim (Extracted from verify.m)
 %% ============================================================
 
 function result_signal = run_simulation(x)
-    % 参数解包
+    % 参数解包 / Parameter unpacking
     % x = [E_b, E_b_azo_trans, E_b_azo_cis, k0, k_mig, drt_z, drt_s]
     E_b           = x(1);
     E_b_azo_trans = x(2);
@@ -332,14 +332,14 @@ function result_signal = run_simulation(x)
     drt_z         = x(6);
     drt_s         = x(7);
 
-    % 力学常数
+    % 力学常数 / Mechanical constants
     kBT   = 4.14;
     lp_s  = 0.75;
     lc_s  = 0.7;
     lc_d  = 0.34;
     dE_TYE = -1.55;
 
-    % 结构参数
+    % 结构参数 / Structural parameters
     n_D1 = 10; n_D2 = 10; n_S1 = 4; n_gray = 10;
     n_hairpin_1 = 8; n_hairpin_2 = 8;
     n_azo_1 = 3; n_azo_2 = 3;
@@ -347,7 +347,7 @@ function result_signal = run_simulation(x)
     n_track_1 = 15; n_track_2 = 55;
 
     % -----------------------------------------------------------------
-    % 自由能计算（与 verify.m 完全相同）
+    % 自由能计算（与 verify.m 完全相同） / Free energy calculation (Identical to verify.m)
     % -----------------------------------------------------------------
     E_shear_foot = 100;
     for i = 0:n_D2
@@ -418,7 +418,7 @@ function result_signal = run_simulation(x)
         E_config_c(st+2) = E_state_min_c; f_config_c(st+2) = f_state_min_c;
     end
 
-    % 扩展 6 states → 14 states（与 verify.m 完全相同）
+    % 扩展 6 states → 14 states（与 verify.m 完全相同） / Expand 6 states to 14 states (Identical to verify.m)
     E_config_t_copy = E_config_t; E_config_c_copy = E_config_c;
     f_config_t_copy = f_config_t; f_config_c_copy = f_config_c;
 
@@ -438,14 +438,14 @@ function result_signal = run_simulation(x)
     f_config_c(7:8)   = f_config_c_copy(3); f_config_c(9:10)  = f_config_c_copy(4);
     f_config_c(11:12) = f_config_c_copy(5); f_config_c(13:14) = f_config_c_copy(6);
 
-    % TYE 能量修正（与 verify.m 相同）
+    % TYE 能量修正（与 verify.m 相同） / TYE energy correction (Identical to verify.m)
     for idx = [1,4,7,9,11,13]
         E_config_t(idx) = E_config_t(idx) + dE_TYE;
         E_config_c(idx) = E_config_c(idx) + dE_TYE;
     end
 
     % -----------------------------------------------------------------
-    % 速率矩阵（与 verify.m 完全相同）
+    % 速率矩阵（与 verify.m 完全相同） / Rate matrix (Identical to verify.m)
     % -----------------------------------------------------------------
     k_trans = zeros(14,14);
     k_cis   = zeros(14,14);
@@ -539,14 +539,14 @@ function result_signal = run_simulation(x)
     k_cis(10,14)=k_cis(14,10)*exp(E_config_c(10)-E_config_c(14));
 
     % -----------------------------------------------------------------
-    % 时间步长（与 verify.m 相同，带安全限制）
+    % 时间步长（与 verify.m 相同，带安全限制） / Time step (Identical to verify.m, with safety limits)
     % -----------------------------------------------------------------
     mag_t = floor(log10(max(max(max(k_cis)), max(max(k_trans)))));
     dt = 1/10^mag_t/10;
-    dt = max(1e-6, min(0.1, dt));  % 限制在 [1e-6, 0.1] 秒
+    dt = max(1e-6, min(0.1, dt));  % 限制在 [1e-6, 0.1] 秒 / Limit to [1e-6, 0.1]s
 
     % -----------------------------------------------------------------
-    % 构建传播矩阵
+    % 构建传播矩阵 / Build propagation matrix
     % -----------------------------------------------------------------
     R_vis = zeros(14,14);
     R_UV  = zeros(14,14);
@@ -566,7 +566,7 @@ function result_signal = run_simulation(x)
     end
 
     % -----------------------------------------------------------------
-    % 初始条件（与 verify.m 相同）
+    % 初始条件（与 verify.m 相同） / Initial condition (Identical to verify.m)
     % -----------------------------------------------------------------
     p_total = 0.945;
     p_config = zeros(14,1);
@@ -575,7 +575,7 @@ function result_signal = run_simulation(x)
     p_config(11:12) = p_config(11:12) / pp * p_total;
 
     % -----------------------------------------------------------------
-    % 时间演化（130 分钟）
+    % 时间演化（130 分钟） / Time evolution (130 minutes)
     % -----------------------------------------------------------------
     total_steps = floor(130*60/dt);
     result_signal = zeros(floor(total_steps/60)+2, 4);

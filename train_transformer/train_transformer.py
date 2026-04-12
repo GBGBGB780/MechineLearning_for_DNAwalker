@@ -1,10 +1,11 @@
 # coding=utf-8
 """
-train_transformer.py  —  DNA Walker Transformer 主训练脚本
+train_transformer.py — Transformer 主训练脚本
+train_transformer.py — Transformer main training script
 
-运行方式（在 train_transformer/ 目录下）:
-    python train_transformer.py           # 正式训练
-    python train_transformer.py --smoke   # 仅跑 1 epoch 验证流程是否正常
+用法 / Usage (from train_transformer/ directory):
+    python train_transformer.py           # 正式训练 / Full training
+    python train_transformer.py --smoke   # 烟雾测试 / Smoke test (1 epoch)
 """
 
 import argparse

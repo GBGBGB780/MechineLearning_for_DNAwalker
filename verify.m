@@ -10,17 +10,17 @@ clear
 %                    READ PARAMETERS FROM INPUT FILE
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-% 定义输入文件路径
+% 定义输入文件路径 / Define input file path
 input_file = 'matlab_input_params.txt';
 
-% 检查文件是否存在
+% 检查文件是否存在 / Check if file exists
 if ~exist(input_file, 'file')
-    error('错误: 未找到输入文件 %s。请确保参数文件存在!', input_file);
+    error('Error: Input file %s not found. Please make sure the parameter file exists!', input_file);
 end
 
-fprintf('正在从 %s 读取参数...\n', input_file);
+fprintf('Reading parameters from %s...\n', input_file);
 
-% 读取参数文件
+% 读取参数文件 / Read parameter file
 fid = fopen(input_file, 'r');
 params = struct();
 
@@ -31,7 +31,7 @@ while ~feof(fid)
         param_name = strtrim(parts{1});
         param_value = str2double(strtrim(parts{2}));
         
-        % 跳过 END_OF_PARAMS
+        % 跳过 END_OF_PARAMS / Skip END_OF_PARAMS
         if ~strcmp(param_name, 'END_OF_PARAMS')
             params.(param_name) = param_value;
             fprintf('  %s = %e\n', param_name, param_value);
@@ -40,7 +40,7 @@ while ~feof(fid)
 end
 fclose(fid);
 
-fprintf('参数读取完成!\n\n');
+fprintf('Parameters read successfully!\n\n');
 
 %**************************************************************************
 %                               mechanics parameters
@@ -50,20 +50,20 @@ lp_s=0.75;           % nm persistence length of one nucleotide of single strand 
 lc_s=0.7;            % nm contour length of one nucleotide of single strand DNA
 lc_d=0.34;           % nm contour length of one base-pair of duplex DNA
 
-% 必需参数列表
+% 必需参数列表 / Required parameters list
 required_params = {'e_b', 'e_b_azo_trans', 'e_b_azo_cis', 'k0', 'k_mig', 'drt_z', 'drt_s'};
 
-% 检查所有必需参数是否存在
-fprintf('检查必需参数...\n');
+% 检查所有必需参数是否存在 / Check if all required parameters exist
+fprintf('Checking required parameters...\n');
 for i = 1:length(required_params)
     param_name = required_params{i};
     if ~isfield(params, param_name)
-        error('错误: 缺少必需参数 "%s"。请在输入文件中提供该参数!', param_name);
+        error('Error: Missing required parameter "%s". Please provide it in the input file!', param_name);
     end
 end
-fprintf('所有必需参数已找到!\n\n');
+fprintf('All required parameters found!\n\n');
 
-% 读取参数
+% 读取参数 / Read parameters
 E_b = params.e_b;
 E_b_azo_trans = params.e_b_azo_trans;
 E_b_azo_cis = params.e_b_azo_cis;
@@ -330,7 +330,7 @@ n_config_c(6)=n_state_open_c
 
 p_unbind_track=0.09507;
 
-% 读取动力学参数（已在开头检查过必须存在）
+% 读取动力学参数（已在开头检查过必须存在）/ Read kinetic parameters (existence checked at the beginning)
 k0 = params.k0;          % s-1 leg detachment rate at zero force
 k_mig = params.k_mig;    % s-1 leg migration rate
 drt_z = params.drt_z;    % nm  coupling distance for leg dissociation by unzipping
@@ -518,24 +518,24 @@ mag_t=floor(log10(max(max(max(k_cis)),max(max(k_trans)))));
 
 dt=1/10^mag_t/10;
 
-% 限制 dt 的最小值，防止循环次数过大
-dt_min = 1e-6;  % 最小时间步长：1微秒
-dt_max = 0.1;   % 最大时间步长：0.1秒
+% 限制 dt 的最小值，防止循环次数过大 / Limit the minimum value of dt to prevent excessive loop iterations
+dt_min = 1e-6;  % 最小时间步长：1微秒 / Min time step: 1 microsecond
+dt_max = 0.1;   % 最大时间步长：0.1秒 / Max time step: 0.1 second
 
 if dt < dt_min
-    fprintf('警告: 计算得到的 dt (%.2e) 太小，已限制为最小值 %.2e\n', dt, dt_min);
+    fprintf('Warning: Calculated dt (%.2e) is too small, capped at %.2e\n', dt, dt_min);
     dt = dt_min;
 elseif dt > dt_max
-    fprintf('警告: 计算得到的 dt (%.2e) 太大，已限制为最大值 %.2e\n', dt, dt_max);
+    fprintf('Warning: Calculated dt (%.2e) is too large, capped at %.2e\n', dt, dt_max);
     dt = dt_max;
 end
 
-% 计算并显示循环次数
+% 计算并显示循环次数 / Calculate and print loop iterations
 total_iterations = 130*60*1/dt;
-fprintf('\n=== 模拟参数 ===\n');
-fprintf('时间步长 dt: %.2e 秒\n', dt);
-fprintf('模拟总时间: 130 分钟\n');
-fprintf('总循环次数: %.2e\n', total_iterations);
+fprintf('\n=== Simulation Parameters / 模拟参数 ===\n');
+fprintf('Time Step / 时间步长 dt: %.2e s\n', dt);
+fprintf('Total Simulation Time / 模拟总时间: 130 min\n');
+fprintf('Total Iterations / 总循环次数: %.2e\n', total_iterations);
 fprintf('==================\n\n');
 
 R_vis(14,14)=0;
@@ -572,7 +572,7 @@ p_config=p_config';
 %                               dynamics
 
 i_result=1;
-for i=0:1:130*60*1/dt  % 130分钟模拟时间
+for i=0:1:130*60*1/dt  % 130分钟模拟时间 / 130 minutes simulation time
 
     if mod(floor(i*dt/60/10)+1,2)==1
         R_dyn=R_vis;
@@ -664,11 +664,11 @@ result_signal_change(:,6)=result_signal_change(:,2)-result_signal_change(:,5);
 result_signal_change(:,7)=result_signal_change(:,3)-result_signal_change(:,5);
 result_signal_change(:,8)=result_signal_change(:,4)-result_signal_change(:,5);
 
-% 获取实际的数据点数量
+% 获取实际的数据点数量 / Get actual data point count
 num_data_points = size(result_signal, 1);
 
-% 动态计算循环次数，避免数组越界
-% result_DD: 需要访问 i*20+1，所以最大 i 满足 i*20+1 <= num_data_points
+% 动态计算循环次数，避免数组越界 / Dynamically compute iteration count to prevent array out-of-bounds
+% result_DD: 需要访问 i*20+1，所以最大 i 满足 i*20+1 <= num_data_points / Max i must satisfy i*20+1 <= num_data_points
 max_i_DD = floor((num_data_points - 1) / 20);
 if max_i_DD > 0
     for i=1:1:max_i_DD
@@ -676,26 +676,26 @@ if max_i_DD > 0
         result_DD(i,2)=(result_signal(i*20+1,3)-result_signal(1,3))/result_signal(1,3)-(result_signal(i*20+1,2)-result_signal(1,2))/result_signal(1,2);
         result_DD(i,3)=((result_signal(i*20+1,4)-result_signal(1,4))/result_signal(1,4)+(result_signal(i*20+1,3)-result_signal(1,3))/result_signal(1,3)+(result_signal(i*20+1,2)-result_signal(1,2))/result_signal(1,2))/3;
     end
-    fprintf('result_DD: 计算了 %d 个数据点\n', max_i_DD);
+    fprintf('result_DD computed for %d data points\n', max_i_DD);
 else
-    fprintf('警告: result_signal 数据点不足，无法计算 result_DD\n');
+    fprintf('Warning: Insufficient data points for result_DD computation\n');
     result_DD = [];
 end
 
-% result_bb: 需要访问 i*20+1 和 i*20-10+1，所以最大 i 满足 i*20+1 <= num_data_points
+% result_bb: 需要访问 i*20+1 和 i*20-10+1，所以最大 i 满足 i*20+1 <= num_data_points / Max i satisfying condition
 max_i_bb = floor((num_data_points - 1) / 20);
 if max_i_bb > 0
     for i=1:1:max_i_bb
         result_bb(i,1)=i;
         result_bb(i,2)=(result_signal(i*20+1,2)-result_signal(i*20-10+1,2))/(result_signal(i*20+1,3)-result_signal(i*20-10+1,3));
     end
-    fprintf('result_bb: 计算了 %d 个数据点\n', max_i_bb);
+    fprintf('result_bb computed for %d data points\n', max_i_bb);
 else
-    fprintf('警告: result_signal 数据点不足，无法计算 result_bb\n');
+    fprintf('Warning: Insufficient data points for result_bb computation\n');
     result_bb = [];
 end
 
-% result_bb_2: 需要访问 i*20，所以最大 i 满足 i*20 <= size(result_b_fb,1)
+% result_bb_2: 需要访问 i*20，所以最大 i 满足 i*20 <= size(result_b_fb,1) / Max i satisfying condition
 num_b_fb_points = size(result_b_fb, 1);
 max_i_bb2 = floor(num_b_fb_points / 20);
 if max_i_bb2 > 0
@@ -703,9 +703,9 @@ if max_i_bb2 > 0
         result_bb_2(i,1)=i;
         result_bb_2(i,2)=result_b_fb(i*20,2)/result_b_fb(i*20,3);
     end
-    fprintf('result_bb_2: 计算了 %d 个数据点\n', max_i_bb2);
+    fprintf('result_bb_2 computed for %d data points\n', max_i_bb2);
 else
-    fprintf('警告: result_b_fb 数据点不足，无法计算 result_bb_2\n');
+    fprintf('Warning: Insufficient data points for result_bb_2 computation\n');
     result_bb_2 = [];
 end
 
@@ -723,29 +723,29 @@ save result_mig.txt result_mig -ASCII
 %                  READ EXPERIMENTAL DATA AND PLOT COMPARISON
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-fprintf('\n正在读取实验数据并生成对比图...\n');
+fprintf('\nReading experimental data and generating comparison plot... / 正在读取实验数据并生成对比图...\n');
 
-% 定义实验数据文件路径
+% 定义实验数据文件路径 / Define experimental data file path
 exp_data_file = 'Fig3a_fitting.xlsx';
 
-% 检查文件是否存在
+% 检查文件是否存在 / Check if file exists
 if exist(exp_data_file, 'file')
-    % 读取实验数据
+    % 读取实验数据 / Read experimental data
     exp_data = readtable(exp_data_file);
     
-    % 显示实际的列名（用于调试）
-    fprintf('Excel文件的列名:\n');
+    % 显示实际的列名（用于调试） / Show actual column names (for debugging)
+    fprintf('Column names in Excel / Excel文件的列名:\n');
     disp(exp_data.Properties.VariableNames);
     
-    % 提取列数据 - MATLAB会自动将特殊字符转换为下划线
-    exp_time = exp_data.Time;  % 时间
-    % 尝试不同的可能列名
+    % 提取列数据 - MATLAB会自动将特殊字符转换为下划线 / Extract column data - MATLAB converts special chars to underscores
+    exp_time = exp_data.Time;  % 时间 / Time
+    % 尝试不同的可能列名 / Try different possible column names
     if ismember('FAM_FAMT__', exp_data.Properties.VariableNames)
         exp_fam = exp_data.FAM_FAMT__;
     elseif ismember('x_FAM_FAMT__', exp_data.Properties.VariableNames)
         exp_fam = exp_data.x_FAM_FAMT__;
     else
-        exp_fam = exp_data{:, 2};  % 使用索引
+        exp_fam = exp_data{:, 2};  % 使用索引 / Fallback to index
     end
     
     if ismember('TYE_TYET__', exp_data.Properties.VariableNames)
@@ -753,7 +753,7 @@ if exist(exp_data_file, 'file')
     elseif ismember('x_TYE_TYET__', exp_data.Properties.VariableNames)
         exp_tye = exp_data.x_TYE_TYET__;
     else
-        exp_tye = exp_data{:, 3};  % 使用索引
+        exp_tye = exp_data{:, 3};  % 使用索引 / Fallback to index
     end
     
     if ismember('CY5_CY5T_m_', exp_data.Properties.VariableNames)
@@ -761,16 +761,16 @@ if exist(exp_data_file, 'file')
     elseif ismember('x_CY5_CY5T_m_', exp_data.Properties.VariableNames)
         exp_cy5 = exp_data.x_CY5_CY5T_m_;
     else
-        exp_cy5 = exp_data{:, 4};  % 使用索引
+        exp_cy5 = exp_data{:, 4};  % 使用索引 / Fallback to index
     end
     
-    % 提取模拟结果
-    sim_time = result_signal(:, 1);  % 模拟时间
+    % 提取模拟结果 / Extract simulation results
+    sim_time = result_signal(:, 1);  % 模拟时间 / Simulation Target Time
     sim_fam = result_signal(:, 2);   % FAM 模拟结果
     sim_tye = result_signal(:, 3);   % TYE 模拟结果
     sim_cy5 = result_signal(:, 4);   % CY5 模拟结果
     
-    % 先计算 RMSE，以便嵌入图标题
+    % 先计算 RMSE，以便嵌入图标题 / Pre-calculate RMSE for plot titles
     exp_fam_interp = interp1(exp_time, exp_fam, sim_time, 'linear', 'extrap');
     exp_tye_interp = interp1(exp_time, exp_tye, sim_time, 'linear', 'extrap');
     exp_cy5_interp = interp1(exp_time, exp_cy5, sim_time, 'linear', 'extrap');
@@ -780,10 +780,10 @@ if exist(exp_data_file, 'file')
     rmse_cy5   = sqrt(mean((sim_cy5 - exp_cy5_interp).^2, 'omitnan'));
     rmse_total = (rmse_fam + rmse_tye + rmse_cy5) / 3;
 
-    % 创建对比图
+    % 创建对比图 / Create comparison plot
     figure('Position', [100, 100, 1200, 800]);
 
-    % 绘制 FAM 对比
+    % 绘制 FAM 对比 / Plot FAM comparison
     subplot(3, 1, 1);
     plot(sim_time, sim_fam, 'r-', 'LineWidth', 2, 'DisplayName', 'Simulation');
     hold on;
@@ -795,7 +795,7 @@ if exist(exp_data_file, 'file')
     grid on;
     hold off;
 
-    % 绘制 TYE 对比
+    % 绘制 TYE 对比 / Plot TYE comparison
     subplot(3, 1, 2);
     plot(sim_time, sim_tye, 'r-', 'LineWidth', 2, 'DisplayName', 'Simulation');
     hold on;
@@ -807,7 +807,7 @@ if exist(exp_data_file, 'file')
     grid on;
     hold off;
 
-    % 绘制 CY5 对比
+    % 绘制 CY5 对比 / Plot CY5 comparison
     subplot(3, 1, 3);
     plot(sim_time, sim_cy5, 'r-', 'LineWidth', 2, 'DisplayName', 'Simulation');
     hold on;
@@ -819,14 +819,14 @@ if exist(exp_data_file, 'file')
     grid on;
     hold off;
 
-    % 保存图片
+    % 保存图片 / Save figure
     saveas(gcf, 'simulation_vs_experimental.png');
     saveas(gcf, 'simulation_vs_experimental.fig');
     
     fprintf('对比图已保存为 simulation_vs_experimental.png 和 .fig\n');
     
-    % 计算并显示拟合误差（均方根误差）
-    % 需要对实验数据进行插值到模拟时间点
+    % 计算并显示拟合误差（均方根误差） / Calculate and display RMSE
+    % 需要对实验数据进行插值到模拟时间点 / Needs to interpolate experimental data to simulation time points
     exp_fam_interp = interp1(exp_time, exp_fam, sim_time, 'linear', 'extrap');
     exp_tye_interp = interp1(exp_time, exp_tye, sim_time, 'linear', 'extrap');
     exp_cy5_interp = interp1(exp_time, exp_cy5, sim_time, 'linear', 'extrap');
@@ -836,7 +836,7 @@ if exist(exp_data_file, 'file')
     rmse_cy5 = sqrt(mean((sim_cy5 - exp_cy5_interp).^2, 'omitnan'));
     rmse_total = (rmse_fam + rmse_tye + rmse_cy5) / 3;
     
-    fprintf('\n=== 拟合误差分析 (RMSE) ===\n');
+    fprintf('\n=== RMSE / 拟合误差分析 ===\n');
     fprintf('FAM RMSE: %.6f\n', rmse_fam);
     fprintf('TYE RMSE: %.6f\n', rmse_tye);
     fprintf('CY5 RMSE: %.6f\n', rmse_cy5);

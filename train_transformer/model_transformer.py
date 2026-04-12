@@ -1,18 +1,20 @@
 # coding=utf-8
 """
-model_transformer.py  —  DNA Walker Transformer 模型 (TokenMixer 版)
+model_transformer.py — DNA Walker Transformer 模型 (TokenMixer 版)
+model_transformer.py — DNA Walker Transformer model (TokenMixer variant)
 
-架构：PatchTST-Inspired + TokenMixer (替换 MHA)
-  输入: (B, C, L)  C=3 通道 (FAM/TYE/CY5), L=7801 时间点
+架构 / Architecture: PatchTST-Inspired + TokenMixer (replaces MHA)
+  Input:  (B, C, L)  C=3 channels (FAM/TYE/CY5), L=7801 time points
   ↓ Patch Embedding → (B, C, P, d_model)
-  ↓ Temporal TokenMixer Block (per channel) → (B, C, P, d_model)
-  ↓ Cross-Channel TokenMixer Block (per patch) → (B, C, P, d_model)
+  ↓ Temporal TokenMixer Block (per channel)
+  ↓ Cross-Channel TokenMixer Block (per patch)
   ↓ Global Average Pool → (B, d_model)
   ↓ Regression Head → (B, output_size)
 
-TokenMixer 核心思想：
-  仅通过维度重排 + 转置实现 token 间信息混合，复杂度 O(B*T*D)。
-  要求 num_heads == num_tokens (H=T)，每个新 token 都混入了其他 token 的信息。
+TokenMixer 核心思想 / TokenMixer core idea:
+  通过维度重排+转置实现 token 间信息混合，复杂度 O(B*T*D)。
+  Token mixing via reshape + transpose, complexity O(B*T*D).
+  要求 num_heads == num_tokens (H=T)。/ Requires num_heads == num_tokens.
 """
 
 import torch
@@ -26,13 +28,11 @@ import torch.nn.functional as F
 
 class PatchEmbedding(nn.Module):
     """
-    将每条时间序列分割成重叠 Patch，并通过线性投影映射到 d_model 维。
+    Patch 分割 + 线性投影：将时间序列切为重叠 Patch 并映射到 d_model 维。
+    Patch splitting + linear projection: splits time series into overlapping patches
+    and projects to d_model dimensions.
 
-    实现：使用 Conv1d(in=1, out=d_model, kernel=patch_size, stride=stride)
-    等效于 "切 Patch + 线性投影"，并行处理所有通道。
-
-    输入:  (B, C, L)
-    输出:  (B, C, num_patches, d_model)
+    Input:  (B, C, L) → Output: (B, C, num_patches, d_model)
     """
 
     def __init__(self, patch_size: int, stride: int, d_model: int):
@@ -75,8 +75,8 @@ class PatchEmbedding(nn.Module):
 
 class LearnablePositionalEncoding(nn.Module):
     """
-    可学习位置编码，为每个 Patch 位置添加唯一的可学习偏置向量。
-    比固定正弦编码更灵活，适合本任务的非标准序列长度。
+    可学习位置编码：为每个 Patch 位置添加可学习偏置向量。
+    Learnable positional encoding: adds a learnable bias vector per patch position.
     """
 
     def __init__(self, max_patches: int, d_model: int, dropout: float = 0.1):
@@ -101,11 +101,9 @@ class LearnablePositionalEncoding(nn.Module):
 
 class TokenMixer(nn.Module):
     """
-    通过维度重排 + 转置实现 token 间信息混合，复杂度 O(B*T*D)。
-    要求 num_heads == num_tokens (H=T)，
-    每个新 token = 自己的块 + 其他所有 token 的块（重排后拼接）。
-
-    无可学习参数，仅做 reshape + permute。
+    无参数 token 信息混合：通过 reshape + permute 实现 O(B*T*D) 复杂度的 token 交互。
+    Parameter-free token mixing via reshape + permute with O(B*T*D) complexity.
+    要求 / Requires: num_heads == num_tokens (H=T).
     """
 
     def __init__(self, num_tokens: int, d_model: int, dropout: float = 0.0):
@@ -218,15 +216,13 @@ class CrossChannelTokenMixerBlock(nn.Module):
 
 class DNAWalkerTransformer(nn.Module):
     """
-    PatchTST-Inspired Transformer (TokenMixer 版)，用于 DNA Walker 反问题：
-    三条荧光曲线 (FAM, TYE, CY5)  →  7 个物理参数
+    PatchTST-Inspired Transformer (TokenMixer 版) 用于 DNA Walker 反问题。
+    PatchTST-Inspired Transformer (TokenMixer variant) for DNA Walker inverse problem.
 
-    整体流程：
-      Patch Embedding → Positional Encoding
-      → N × TemporalTokenMixerBlock (per channel)
-      → M × CrossChannelTokenMixerBlock
-      → Global Average Pool (时间 + 通道)
-      → Regression Head → Sigmoid (Safe Sigmoid Lock)
+    三条荧光曲线 → 7 个物理参数 / Three fluorescence curves → 7 physical parameters
+
+    Pipeline: Patch Embed → Pos Enc → N × Temporal TokenMixer → M × Cross-Channel
+              TokenMixer → Global Avg Pool → Regression Head → Sigmoid
     """
 
     def __init__(
