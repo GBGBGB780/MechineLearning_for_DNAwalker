@@ -17,3 +17,4 @@ pandas
 # 辅助工具
 matplotlib
 tqdm
+h5py

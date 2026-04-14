@@ -25,8 +25,14 @@ if _THIS_DIR not in sys.path:
 
 from inference_transformer import TransformerPredictor
 
+
+def _to_cwd_relative(path):
+    """将脚本内文件路径转换为相对当前工作目录。"""
+    return os.path.relpath(os.path.normpath(path), start=os.getcwd())
+
+
 # --- 全局常量 ---
-MATLAB_INPUT_FILE = os.path.join(_THIS_DIR, "matlab_input_params.txt")
+MATLAB_INPUT_FILE = _to_cwd_relative(os.path.join(_THIS_DIR, "matlab_input_params.txt"))
 
 
 def load_real_experimental_data(config, data_path):

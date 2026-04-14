@@ -36,7 +36,20 @@ class TransformerConfig:
             raise FileNotFoundError(f"配置文件不存在 / Config not found: {config_file}")
         self._cfg = configparser.ConfigParser()
         self._cfg.read(config_file, encoding='utf-8')
-        self._this_dir = _THIS_DIR
+        self._config_dir = os.path.dirname(os.path.abspath(config_file))
+
+    def _resolve_from_config_dir(self, path: str) -> str:
+        """先按配置文件所在目录解析，再标准化。/ Resolve a path against the config dir."""
+        if path.startswith('./'):
+            path = path[2:]
+        if not os.path.isabs(path):
+            path = os.path.join(self._config_dir, path)
+        return os.path.normpath(path)
+
+    @staticmethod
+    def _to_cwd_relative(path: str) -> str:
+        """将路径转换为相对当前工作目录。/ Convert a path to be relative to cwd."""
+        return os.path.relpath(os.path.normpath(path), start=os.getcwd())
 
     # ===== TRANSFORMER 模型参数 / Model Parameters =====
 
@@ -115,22 +128,26 @@ class TransformerConfig:
     # ===== 文件路径 / File Paths =====
 
     def get_dataset_path(self) -> str:
-        """获取数据集绝对路径 / Get absolute dataset path."""
+        """获取相对当前工作目录的数据集路径 / Get cwd-relative dataset path."""
         rel = self._cfg.get('PATHS', 'dataset_file')
-        return os.path.normpath(os.path.join(self._this_dir, rel))
+        return self._to_cwd_relative(self._resolve_from_config_dir(rel))
 
     def get_model_save_path(self) -> str:
-        """获取模型保存绝对路径 / Get absolute model save path."""
+        """获取相对当前工作目录的模型保存路径 / Get cwd-relative model save path."""
         rel = self._cfg.get('TRANSFORMER', 'model_save_path')
-        path = os.path.normpath(os.path.join(self._this_dir, rel))
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        path = self._to_cwd_relative(self._resolve_from_config_dir(rel))
+        dir_name = os.path.dirname(path)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
         return path
 
     def get_y_scaler_path(self) -> str:
-        """获取 y_scaler 保存路径 / Get y_scaler save path."""
+        """获取相对当前工作目录的 y_scaler 路径 / Get cwd-relative y_scaler path."""
         rel = self._cfg.get('TRANSFORMER', 'y_scaler_file')
-        path = os.path.normpath(os.path.join(self._this_dir, rel))
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        path = self._to_cwd_relative(self._resolve_from_config_dir(rel))
+        dir_name = os.path.dirname(path)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
         return path
 
     # ===== AUTOENCODER 参数 / Autoencoder Parameters =====

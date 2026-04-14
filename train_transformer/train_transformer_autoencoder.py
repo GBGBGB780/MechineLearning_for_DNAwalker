@@ -84,6 +84,11 @@ P3_NUM_EPOCHS = 200
 P3_PATIENCE = 50
 
 
+def _to_cwd_relative(path):
+    """将脚本内文件路径转换为相对当前工作目录。"""
+    return os.path.relpath(os.path.normpath(path), start=os.getcwd())
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 工具函数 / Utility functions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -781,6 +786,8 @@ def final_test(encoder, decoder, test_loader, parent_config, device, param_names
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
+    global CHECKPOINT_EVERY_EPOCHS
+
     parser = argparse.ArgumentParser(
         description='DNA Walker Transformer 三阶段 Encoder-Decoder 训练 (支持断点续训)'
     )
@@ -801,7 +808,6 @@ def main():
                              '例如 results/best_transformer_model.pth)')
     args = parser.parse_args()
 
-    global CHECKPOINT_EVERY_EPOCHS
     CHECKPOINT_EVERY_EPOCHS = args.checkpoint_every
 
     global_start_time = time.time()
@@ -825,9 +831,9 @@ def main():
     param_names = parent_config.get_trainable_param_names()
 
     # 路径设置
-    checkpoint_path = os.path.join(_THIS_DIR, CHECKPOINT_FILENAME)
-    decoder_save_path = os.path.join(_THIS_DIR, DECODER_SAVE_FILENAME)
-    encoder_save_path = os.path.join(_THIS_DIR, ENCODER_SAVE_FILENAME)
+    checkpoint_path = _to_cwd_relative(os.path.join(_THIS_DIR, CHECKPOINT_FILENAME))
+    decoder_save_path = _to_cwd_relative(os.path.join(_THIS_DIR, DECODER_SAVE_FILENAME))
+    encoder_save_path = _to_cwd_relative(os.path.join(_THIS_DIR, ENCODER_SAVE_FILENAME))
 
     print(f"  Encoder 保存路径:    {encoder_save_path}")
     print(f"  Decoder 保存路径:    {decoder_save_path}")

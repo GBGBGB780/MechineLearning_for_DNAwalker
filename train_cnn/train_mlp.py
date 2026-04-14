@@ -149,7 +149,7 @@ def train():
             print(f"  -> 最佳模型已保存 / Best model saved (Val MSE: {avg_val_mse:.6f})")
         else:
             epochs_no_improve += 1
-            if epochs_no_improve >= EARLY_STOPPING_PATIENCE:
+            if EARLY_STOPPING_PATIENCE > 0 and epochs_no_improve >= EARLY_STOPPING_PATIENCE:
                 print(f"\n*** Early Stopping: {EARLY_STOPPING_PATIENCE} 轮未改善 / epochs without improvement ***")
                 break
 

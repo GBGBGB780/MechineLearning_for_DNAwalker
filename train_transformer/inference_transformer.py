@@ -68,6 +68,40 @@ class TransformerPredictor:
         else:
             self.model.load_state_dict(checkpoint)
 
+    @staticmethod
+    def _resize_to_expected_length(X_input, expected_len):
+        """
+        将输入曲线插值/压缩到期望长度。
+        Resize each curve to the expected length via linear interpolation.
+        """
+        B, C, L = X_input.shape
+        if L == expected_len:
+            return X_input
+        if L <= 0:
+            raise ValueError("输入时间序列长度必须大于 0。")
+
+        src_axis = np.linspace(0.0, 1.0, L, dtype=np.float64)
+        dst_axis = np.linspace(0.0, 1.0, expected_len, dtype=np.float64)
+        resized = np.empty((B, C, expected_len), dtype=np.float32)
+
+        for b in range(B):
+            for c in range(C):
+                curve = np.asarray(X_input[b, c], dtype=np.float64)
+                finite_mask = np.isfinite(curve)
+
+                if not finite_mask.any():
+                    resized[b, c] = 0.0
+                    continue
+
+                if finite_mask.sum() == 1:
+                    resized[b, c] = curve[finite_mask][0]
+                    continue
+
+                cleaned_curve = np.interp(src_axis, src_axis[finite_mask], curve[finite_mask])
+                resized[b, c] = np.interp(dst_axis, src_axis, cleaned_curve)
+
+        return resized
+
     def predict(self, X_raw):
         """
         对输入数据进行预测并反归一化。
@@ -81,6 +115,7 @@ class TransformerPredictor:
             predicted_real: 反归一化后的物理参数 (B, output_size)
         """
         # 1. 维度处理
+        X_raw = np.asarray(X_raw, dtype=np.float32)
         if X_raw.ndim == 2:
             # (3, T) -> (1, 3, T)
             X_input = X_raw[np.newaxis, ...]
@@ -90,11 +125,14 @@ class TransformerPredictor:
             raise ValueError(f"输入 X 维度不匹配。期望 (B, 3, T) 或 (3, T)，得到 {X_raw.shape}")
 
         B, C, L = X_input.shape
+        expected_channels = self.parent_config.get_num_curves()
+        if C != expected_channels:
+            raise ValueError(f"输入通道数不匹配。期望 {expected_channels}，得到 {C}")
+
         expected_len = self.parent_config.get_seq_length()
         if L != expected_len:
-            print(f"警告: 输入长度 ({L}) 与期望长度 ({expected_len}) 不匹配，将进行插值补全/截断。")
-            # 这里简单判断，实际应用中建议先在外部做 pd.read_excel -> interp1d 处理
-            pass
+            print(f"警告: 输入长度 ({L}) 与期望长度 ({expected_len}) 不匹配，正在自动重采样。")
+            X_input = self._resize_to_expected_length(X_input, expected_len)
 
         # 2. 单样本联合通道归一化 (Domain Invariant)
         # 计算每个样本 (3, T) 的均值和标推差

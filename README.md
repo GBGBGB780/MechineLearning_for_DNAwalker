@@ -66,7 +66,7 @@ flowchart LR
     end
 
     subgraph Inference ["Prediction / 预测"]
-        G["Experimental Excel<br/>实验数据"] --> H["predict_cnn.py<br/>or predict_transformer.py"]
+        G["Experimental Excel<br/>实验数据"] --> H["train_cnn/predict.py<br/>or train_transformer/predict.py"]
         E --> H
         F --> H
         H --> I["matlab_input_params.txt"]
@@ -96,7 +96,9 @@ MachineLearning_for_DNAwalker/
 │   ├── train_mlp.py            #   主训练脚本 / Main training script
 │   ├── train_autoencoder.py    #   Encoder-Decoder 三阶段训练 / 3-phase Encoder-Decoder
 │   ├── inference_cnn.py        #   推理模块 / Inference module
-│   ├── predict_cnn.py          #   实验数据预测 / Experimental prediction
+│   ├── predict.py              #   实验数据预测 / Experimental prediction
+│   ├── verify.m                #   MATLAB 正向验证 / MATLAB forward verification
+│   ├── optimize_params.m       #   MATLAB 局部优化 / MATLAB local optimization
 │   ├── run_job.sh              #   HPC PBS 作业脚本 / HPC PBS job script
 │   └── results/                #   模型输出 / Model outputs
 │
@@ -108,7 +110,9 @@ MachineLearning_for_DNAwalker/
 │   ├── train_transformer.py    #   主训练脚本 / Main training script
 │   ├── train_transformer_autoencoder.py  # Encoder-Decoder 训练 / Encoder-Decoder
 │   ├── inference_transformer.py #  推理模块 / Inference module
-│   ├── predict_transformer.py  #   实验数据预测 / Experimental prediction
+│   ├── predict.py              #   实验数据预测 / Experimental prediction
+│   ├── verify.m                #   MATLAB 正向验证 / MATLAB forward verification
+│   ├── optimize_params.m       #   MATLAB 局部优化 / MATLAB local optimization
 │   ├── run_job.sh              #   HPC PBS 作业脚本 / HPC PBS job script
 │   ├── run_autoencoder_job.sh  #   Autoencoder HPC 脚本 / Autoencoder HPC script
 │   └── results/                #   模型输出 / Model outputs
@@ -119,9 +123,6 @@ MachineLearning_for_DNAwalker/
 │   └── stretch_data.py         #   实验数据振幅拉伸 / Experimental data stretching
 │
 ├── gendata.m                   # MATLAB 数据生成脚本 / MATLAB data generation
-├── verify.m                    # MATLAB 正向验证脚本 / MATLAB forward verification
-├── optimize_params.m           # MATLAB 优化脚本 / MATLAB optimization
-│
 └── results/                    # 共用数据集 / Shared datasets
     ├── training_dataset.npz    #   训练数据 / Training data
     ├── y_scaler.pkl            #   Y 归一化器 / Y scaler
@@ -226,16 +227,16 @@ python train_transformer_autoencoder.py --resume   # Resume from checkpoint / �
 ```powershell
 # CNN prediction / CNN 预测
 cd train_cnn/
-python predict_cnn.py
+python predict.py
 
 # Transformer prediction / Transformer 预测
 cd train_transformer/
-python predict_transformer.py
+python predict.py
 ```
 
-Pipeline: Load Excel → Interpolation → SG Smoothing → DL Prediction (Test-Time Ensemble) → Nelder-Mead Refinement → `matlab_input_params.txt`
+Pipeline: Load Excel → Interpolation → SG Smoothing → DL Prediction (Test-Time Ensemble) → `matlab_input_params.txt`
 
-流程：加载 Excel → 插值 → SG 平滑 → DL 预测（测试时集成）→ Nelder-Mead 微调 → `matlab_input_params.txt`
+流程：加载 Excel → 插值 → SG 平滑 → DL 预测（测试时集成）→ `matlab_input_params.txt`
 
 ---
 
@@ -243,7 +244,8 @@ Pipeline: Load Excel → Interpolation → SG Smoothing → DL Prediction (Test-
 
 ```matlab
 % In MATLAB / 在 MATLAB 中
-verify    % Reads matlab_input_params.txt, runs forward ODE, plots comparison
+cd train_cnn        % or cd train_transformer
+verify              % Reads matlab_input_params.txt, runs forward ODE, plots comparison
 ```
 
 This runs the forward ODE simulation with the predicted parameters and overlays the result on the experimental curves for visual verification.
@@ -287,7 +289,7 @@ CNN 和 Transformer 共用的全局配置：
 | `[PHYSICAL_PARAMETERS]` | Fixed/trainable params / 固定/可训练参数 |
 | `[TRAINING_PARAMETER_RANGES]` | Min-max ranges / 参数范围 |
 | `[NANOROBOT_MODELING]` | Experimental data path, simulation time / 实验数据路径、仿真时间 |
-| `[PREDICTION]` | SG smoothing, Test-Time Ensemble, Nelder-Mead / SG 平滑、集成预测、NM 微调 |
+| `[PREDICTION]` | SG smoothing, Test-Time Ensemble / SG 平滑、集成预测 |
 | `[AUTOENCODER]` | Decoder training, loss weights / Decoder 训练、损失权重 |
 
 ### `config_transformer.ini` (train_transformer/)

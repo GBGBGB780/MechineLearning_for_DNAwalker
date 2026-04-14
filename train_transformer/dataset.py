@@ -117,9 +117,21 @@ def load_and_preprocess_data_3d(npz_filename, batch_size, parent_config, transfo
     X_scaled = np.nan_to_num(X_scaled, nan=0.0).astype(np.float32)
     print("X 单样本联合通道归一化完成 (保持 3D 形状)")
 
-    # ---------- MinMaxScaler 缩放 Y → [0.1, 0.9] (Safe Sigmoid Lock) ----------
+    # ---------- 数据集拆分 ----------
+    test_ratio  = parent_config.get_test_split_ratio()
+    val_ratio   = parent_config.get_val_split_ratio()
+    random_seed = parent_config.get_random_seed()
+
+    X_tv, X_test, Y_tv_raw, Y_test_raw = train_test_split(
+        X_scaled, Y_data, test_size=test_ratio, random_state=random_seed)
+    X_train, X_val, Y_train_raw, Y_val_raw = train_test_split(
+        X_tv, Y_tv_raw, test_size=val_ratio, random_state=random_seed)
+
+    # 仅在训练集上拟合 y_scaler，避免标签泄漏 / Fit y_scaler on train split only
     y_scaler = MinMaxScaler(feature_range=(0.1, 0.9))
-    Y_scaled = y_scaler.fit_transform(Y_data).astype(np.float32)
+    Y_train = y_scaler.fit_transform(Y_train_raw).astype(np.float32)
+    Y_val = y_scaler.transform(Y_val_raw).astype(np.float32)
+    Y_test = y_scaler.transform(Y_test_raw).astype(np.float32)
 
     # 保存 y_scaler
     y_scaler_path = transformer_config.get_y_scaler_path()
@@ -127,16 +139,6 @@ def load_and_preprocess_data_3d(npz_filename, batch_size, parent_config, transfo
     with open(y_scaler_path, 'wb') as f:
         pickle.dump(y_scaler, f)
     print(f"y_scaler 已保存至: {y_scaler_path}")
-
-    # ---------- 数据集拆分 ----------
-    test_ratio  = parent_config.get_test_split_ratio()
-    val_ratio   = parent_config.get_val_split_ratio()
-    random_seed = parent_config.get_random_seed()
-
-    X_tv, X_test, Y_tv, Y_test = train_test_split(
-        X_scaled, Y_scaled, test_size=test_ratio, random_state=random_seed)
-    X_train, X_val, Y_train, Y_val = train_test_split(
-        X_tv, Y_tv, test_size=val_ratio, random_state=random_seed)
 
     print(f"训练集: {X_train.shape[0]}  验证集: {X_val.shape[0]}  测试集: {X_test.shape[0]}")
 

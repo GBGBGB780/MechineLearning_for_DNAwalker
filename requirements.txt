@@ -13,3 +13,6 @@ umap-learn>=0.5.9
 
 # pandas 依赖 (用于读写 Excel .xlsx 文件)
 openpyxl>=3.1.5
+
+# MATLAB v7.3 (.mat/HDF5) 转 NPZ
+h5py>=3.11.0

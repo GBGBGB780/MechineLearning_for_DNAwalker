@@ -125,9 +125,22 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
     np.nan_to_num(X_scaled, nan=0.0, copy=False)
     print("X 归一化完成 / X normalization done (Domain Invariant)")
 
-    # Y 缩放至 [0.1, 0.9] / Scale Y to [0.1, 0.9] (Safe Sigmoid Lock)
+    # 拆分数据集 / Split dataset
+    test_ratio = config.get_test_split_ratio()
+    val_ratio = config.get_val_split_ratio()
+    seed = config.get_random_seed()
+    X_tv, X_test, Y_tv_raw, Y_test_raw = train_test_split(
+        X_scaled, Y_clean, test_size=test_ratio, random_state=seed
+    )
+    X_train, X_val, Y_train_raw, Y_val_raw = train_test_split(
+        X_tv, Y_tv_raw, test_size=val_ratio, random_state=seed
+    )
+
+    # 仅在训练集上拟合 y_scaler，避免标签泄漏 / Fit y_scaler on train split only
     y_scaler = MinMaxScaler(feature_range=(0.1, 0.9))
-    Y_scaled = y_scaler.fit_transform(Y_clean)
+    Y_train = y_scaler.fit_transform(Y_train_raw)
+    Y_val = y_scaler.transform(Y_val_raw)
+    Y_test = y_scaler.transform(Y_test_raw)
 
     # 保存 y_scaler / Save y_scaler
     y_scaler_file = config.get_y_scaler_file()
@@ -139,18 +152,15 @@ def load_and_preprocess_data(npz_filename, batch_size=64, config=None):
     print(f"Y Scaler 已保存 / saved: {y_scaler_file}")
 
     # 转 float32 / Convert to float32
-    X_scaled = X_scaled.astype(np.float32)
-    Y_scaled = Y_scaled.astype(np.float32)
-
-    # 拆分数据集 / Split dataset
-    test_ratio = config.get_test_split_ratio()
-    val_ratio = config.get_val_split_ratio()
-    seed = config.get_random_seed()
-    X_tv, X_test, Y_tv, Y_test = train_test_split(X_scaled, Y_scaled, test_size=test_ratio, random_state=seed)
-    X_train, X_val, Y_train, Y_val = train_test_split(X_tv, Y_tv, test_size=val_ratio, random_state=seed)
+    X_train = X_train.astype(np.float32)
+    X_val = X_val.astype(np.float32)
+    X_test = X_test.astype(np.float32)
+    Y_train = Y_train.astype(np.float32)
+    Y_val = Y_val.astype(np.float32)
+    Y_test = Y_test.astype(np.float32)
     print(f"训练/Train: {X_train.shape[0]}, 验证/Val: {X_val.shape[0]}, 测试/Test: {X_test.shape[0]}")
 
-    del X_scaled, X_tv, Y_scaled, Y_tv
+    del X_scaled, X_tv, Y_clean, Y_tv_raw, Y_train_raw, Y_val_raw, Y_test_raw
     gc.collect()
 
     # 创建 DataLoaders / Create DataLoaders

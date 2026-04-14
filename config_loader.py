@@ -34,6 +34,20 @@ class Config:
         self.config = configparser.ConfigParser()
         self.config.read(config_file, encoding='utf-8')
         self.config_file = config_file
+        self._config_dir = os.path.dirname(os.path.abspath(config_file))
+
+    def _resolve_from_config_dir(self, path):
+        """将配置中的路径解析为绝对路径。/ Resolve config path against config dir."""
+        if path.startswith('./'):
+            path = path[2:]
+        if not os.path.isabs(path):
+            path = os.path.join(self._config_dir, path)
+        return os.path.normpath(path)
+
+    @staticmethod
+    def _to_cwd_relative(path):
+        """将绝对路径转换为相对当前工作目录的路径。/ Convert to cwd-relative path."""
+        return os.path.relpath(os.path.normpath(path), start=os.getcwd())
 
     # ==================== TRAINING 参数 / Training Parameters ====================
 
@@ -73,11 +87,9 @@ class Config:
         return self.config.getint('TRAINING', 'num_epochs')
 
     def get_output_path(self):
-        """获取公共输出目录 (根目录下的 results) / Get common output directory path."""
+        """获取公共输出目录（相对当前工作目录）/ Get cwd-relative output directory path."""
         path = self.config.get('PATHS', 'output_path', fallback='results')
-        if not os.path.isabs(path) and path.startswith('./'):
-            path = path[2:]
-        return os.path.join(_THIS_DIR, path)
+        return self._to_cwd_relative(self._resolve_from_config_dir(path))
 
     def get_model_save_path(self):
         """获取模型保存路径 (执行目录下的 results) / Get model save path."""
@@ -281,7 +293,7 @@ class Config:
             if path.startswith('./'):
                 path = path[2:]
             return os.path.join(self.get_output_path(), path)
-        return path
+        return self._to_cwd_relative(path)
 
     def get_sim_total_time(self):
         """获取模拟总时长 / Get total simulation time."""

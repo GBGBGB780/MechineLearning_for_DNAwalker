@@ -91,7 +91,7 @@ def train_phase1_decoder(decoder, train_loader, val_loader, config, device,
             print(f"  -> 最佳 Decoder 已保存 / Best Decoder saved (Val: {avg_val:.6f})")
         else:
             epochs_no_improve += 1
-            if epochs_no_improve >= patience:
+            if patience > 0 and epochs_no_improve >= patience:
                 print(f"\n*** Phase 1 Early Stopping ({patience} epochs) ***")
                 break
 
@@ -183,7 +183,7 @@ def train_phase2_encoder(encoder, decoder, train_loader, val_loader, config, dev
             print(f"  -> 最佳 Encoder 已保存 / Best Encoder saved (Val MSE: {avg_mse:.6f})")
         else:
             epochs_no_improve += 1
-            if epochs_no_improve >= patience:
+            if patience > 0 and epochs_no_improve >= patience:
                 print(f"\n*** Phase 2 Early Stopping ({patience} epochs) ***")
                 break
 

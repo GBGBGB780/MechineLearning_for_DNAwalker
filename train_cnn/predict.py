@@ -6,9 +6,8 @@ predict.py — CNN experimental data prediction script
 完整流程 / Full pipeline:
     1. 加载实验 Excel → 插值 + SG 平滑        / Load Excel → interpolation + SG smoothing
     2. DL 模型预测（Test-Time Ensemble）       / DL prediction (Test-Time Ensemble)
-    3. Nelder-Mead 局部微调                    / Nelder-Mead local refinement
-    4. 反归一化 → 物理参数                     / Inverse scaling → physical parameters
-    5. 写入 matlab_input_params.txt            / Write MATLAB input file
+    3. 反归一化 → 物理参数                     / Inverse scaling → physical parameters
+    4. 写入 matlab_input_params.txt            / Write MATLAB input file
 
 用法 / Usage:
     cd train_cnn/
@@ -22,7 +21,6 @@ import os
 import sys
 from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter
-from scipy.optimize import minimize
 
 # 路径设置 / Path setup
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -34,7 +32,13 @@ if _THIS_DIR not in sys.path:
 
 from inference_cnn import NanorobotPredictor
 
-MATLAB_INPUT_FILE = os.path.join(_THIS_DIR, "matlab_input_params.txt")
+
+def _to_cwd_relative(path):
+    """将脚本内文件路径转换为相对当前工作目录。"""
+    return os.path.relpath(os.path.normpath(path), start=os.getcwd())
+
+
+MATLAB_INPUT_FILE = _to_cwd_relative(os.path.join(_THIS_DIR, "matlab_input_params.txt"))
 
 
 def load_real_experimental_data(config, data_path):
@@ -102,37 +106,6 @@ def write_matlab_input(params_dict):
         print(f"Error: {e}")
 
 
-def refine_with_nelder_mead(predictor, initial_params_scaled):
-    """
-    Nelder-Mead 局部微调：修正模型预测偏差。
-    Nelder-Mead local refinement: correct model prediction bias.
-
-    Args:
-        predictor:             NanorobotPredictor 实例 / instance
-        initial_params_scaled: DL 输出的归一化参数 (7,) / normalized params from DL
-
-    Returns:
-        refined_params_scaled: 微调后的归一化参数 / refined normalized params
-    """
-    print("\n--- 3. Nelder-Mead 局部微调 / Local refinement ---")
-
-    lb = predictor.config.get_nm_lower_bound()
-    ub = predictor.config.get_nm_upper_bound()
-
-    def objective(params):
-        penalty = np.sum(np.maximum(0, lb - params)**2 + np.maximum(0, params - ub)**2)
-        proximity = np.mean((params - initial_params_scaled)**2)
-        return proximity * 10 + penalty * 1000
-
-    result = minimize(objective, x0=initial_params_scaled, method='Nelder-Mead',
-                      options={'maxiter': 500, 'xatol': 1e-7, 'fatol': 1e-9, 'adaptive': True})
-
-    refined = np.clip(result.x, lb, ub)
-    print(f"  收敛 / Converged: {result.success}, 迭代 / iters: {result.nit}")
-    print(f"  平均偏移 / Mean shift: {np.mean(np.abs(refined - initial_params_scaled)):.4f}")
-    return refined
-
-
 def predict_parameters():
     """
     完整预测流程。/ Full prediction pipeline.
@@ -181,12 +154,9 @@ def predict_parameters():
     print(f"  集成预测 / Ensemble (N={N_ENS}): {pred_scaled}")
     print(f"  集成标准差 / Ensemble std: {np.round(np.std(preds, axis=0), 5)}")
 
-    # Nelder-Mead 微调 / Refinement
-    refined = refine_with_nelder_mead(predictor, pred_scaled)
-
     # 反归一化 / Inverse scaling
-    print("\n--- 4. 反归一化 / Inverse scaling ---")
-    pred_real = predictor.y_scaler.inverse_transform(refined.reshape(1, -1))
+    print("\n--- 3. 反归一化 / Inverse scaling ---")
+    pred_real = predictor.y_scaler.inverse_transform(pred_scaled.reshape(1, -1))
     log_params = predictor.config.get_log_transform_params()
     log_eps = predictor.config.get_log_epsilon()
     param_names = predictor.get_param_names()
@@ -199,7 +169,7 @@ def predict_parameters():
     params_dict = {n: v for n, v in zip(param_names, pred_real[0])}
     write_matlab_input(params_dict)
 
-    print("\n--- 5. 最终预测参数 / Final predicted parameters ---")
+    print("\n--- 4. 最终预测参数 / Final predicted parameters ---")
     print("=" * 35)
     for n, v in zip(param_names, pred_real[0]):
         print(f"{n:<20}: {v:<15.6e}")
