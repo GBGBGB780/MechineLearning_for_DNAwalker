@@ -49,7 +49,7 @@ if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 if _CNN_DIR not in sys.path:
     sys.path.insert(0, _CNN_DIR)
-
+ 
 from config_loader_transformer import load_configs
 from config_loader import Config as ParentConfig
 from dataset import load_and_preprocess_data_3d
@@ -61,9 +61,9 @@ from model_cnn import ForwardDecoder  # CNN Decoder 位于 train_cnn/ / CNN Deco
 # 常量与默认参数 / Constants and default parameters
 # ─────────────────────────────────────────────────────────────────────────────
 
-CHECKPOINT_FILENAME = 'results/transformer_autoencoder_checkpoint.pth'
-DECODER_SAVE_FILENAME = 'results/best_transformer_decoder.pth'
-ENCODER_SAVE_FILENAME = 'results/best_transformer_model.pth'
+# Checkpoint/Save paths (dynamically resolved from config later)
+# They will be located in the same directory as ENCODER_SAVE_FILENAME
+
 
 CHECKPOINT_EVERY_EPOCHS = 20   # 每 N epoch 强制保存一次 checkpoint
 DEFAULT_MAX_HOURS = 23.0       # 默认最大运行小时数 (HPC 24h 限制，留 1h 余量)
@@ -831,9 +831,10 @@ def main():
     param_names = parent_config.get_trainable_param_names()
 
     # 路径设置
-    checkpoint_path = _to_cwd_relative(os.path.join(_THIS_DIR, CHECKPOINT_FILENAME))
-    decoder_save_path = _to_cwd_relative(os.path.join(_THIS_DIR, DECODER_SAVE_FILENAME))
-    encoder_save_path = _to_cwd_relative(os.path.join(_THIS_DIR, ENCODER_SAVE_FILENAME))
+    encoder_save_path = transformer_config.get_model_save_path()
+    output_dir = os.path.dirname(encoder_save_path) if os.path.dirname(encoder_save_path) else '.'
+    decoder_save_path = os.path.join(output_dir, 'best_transformer_decoder.pth')
+    checkpoint_path = os.path.join(output_dir, 'transformer_autoencoder_checkpoint.pth')
 
     print(f"  Encoder 保存路径:    {encoder_save_path}")
     print(f"  Decoder 保存路径:    {decoder_save_path}")

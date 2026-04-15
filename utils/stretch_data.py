@@ -14,9 +14,11 @@ useful for testing model robustness to different signal magnitudes.
 import pandas as pd
 import os
 
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # 文件路径 / File paths
-INPUT_FILE = '../results/Fig3a_fitting.xlsx'
-OUTPUT_FILE = '../results/Fig3a_fitting_stretched.xlsx'
+INPUT_FILE = os.path.join(_THIS_DIR, '../results/Fig3a_fitting.xlsx')
+OUTPUT_FILE = os.path.join(_THIS_DIR, '../results/Fig3a_fitting_stretched.xlsx')
 
 
 def stretch_y_data(input_path, output_path, factor=2):
