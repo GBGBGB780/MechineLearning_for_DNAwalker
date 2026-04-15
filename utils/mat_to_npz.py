@@ -14,6 +14,35 @@ import os
 import h5py
 
 
+def _decode_matlab_string_dataset(dataset):
+    """Decode a MATLAB HDF5 char/string dataset into a Python string."""
+    value = dataset[()]
+
+    if isinstance(value, bytes):
+        return value.decode('utf-8', errors='ignore').replace('\x00', '').strip()
+
+    arr = np.asarray(value)
+
+    if arr.dtype.kind == 'S':
+        raw = arr.tobytes()
+        for encoding in ('utf-16-le', 'utf-16', 'utf-8', 'latin-1'):
+            try:
+                text = raw.decode(encoding).replace('\x00', '').strip()
+            except UnicodeDecodeError:
+                continue
+            if text:
+                return text
+
+    if arr.dtype.kind == 'U':
+        return ''.join(arr.ravel().tolist()).replace('\x00', '').strip()
+
+    if arr.dtype.kind in ('i', 'u'):
+        chars = [chr(int(code)) for code in arr.ravel() if int(code) != 0]
+        return ''.join(chars).strip()
+
+    return str(value).replace('\x00', '').strip()
+
+
 def load_mat_v73(mat_file_path):
     """
     加载 MATLAB v7.3 文件，处理列主序存储和 HDF5 结构。
@@ -39,11 +68,7 @@ def load_mat_v73(mat_file_path):
                             names = []
                             for ref in np.ravel(arr):
                                 item = f[ref]
-                                if item.dtype.kind == 'S':
-                                    byte_str = item[()].tobytes()
-                                    names.append(byte_str.decode('utf-16').replace('\x00', ''))
-                                else:
-                                    names.append(str(item[()]))
+                                names.append(_decode_matlab_string_dataset(item))
                             data[key] = np.array(names)
                         except Exception as e:
                             print(f"Warning: Failed to parse param_names ({e}), saving raw data.")

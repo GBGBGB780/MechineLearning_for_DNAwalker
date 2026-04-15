@@ -22,6 +22,26 @@ if _PARENT_DIR not in sys.path:
 from config_loader import Config as ParentConfig  # noqa: E402
 
 
+def _normalize_config_files(config_file, extra_config_files=None):
+    """Return an ordered list of config files with existence checks."""
+    config_files = [config_file]
+    if extra_config_files:
+        if isinstance(extra_config_files, (str, os.PathLike)):
+            config_files.append(extra_config_files)
+        else:
+            config_files.extend(extra_config_files)
+
+    normalized = []
+    for path in config_files:
+        if path is None:
+            continue
+        path = os.fspath(path)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"配置文件不存在 / Config not found: {path}")
+        normalized.append(path)
+    return normalized
+
+
 class TransformerConfig:
     """
     Transformer 专用配置加载器。/ Transformer-specific config loader.
@@ -29,14 +49,15 @@ class TransformerConfig:
     Reads model architecture and training hyperparameters from config_transformer.ini.
     """
 
-    def __init__(self, config_file=None):
+    def __init__(self, config_file=None, extra_config_files=None):
         if config_file is None:
             config_file = os.path.join(_THIS_DIR, 'config_transformer.ini')
-        if not os.path.exists(config_file):
-            raise FileNotFoundError(f"配置文件不存在 / Config not found: {config_file}")
+        config_files = _normalize_config_files(config_file, extra_config_files)
         self._cfg = configparser.ConfigParser()
-        self._cfg.read(config_file, encoding='utf-8')
-        self._config_dir = os.path.dirname(os.path.abspath(config_file))
+        self._cfg.read(config_files, encoding='utf-8')
+        self.config_file = config_files[0]
+        self.config_files = config_files
+        self._config_dir = os.path.dirname(os.path.abspath(self.config_file))
 
     def _resolve_from_config_dir(self, path: str) -> str:
         """先按配置文件所在目录解析，再标准化。/ Resolve a path against the config dir."""
@@ -173,7 +194,8 @@ class TransformerConfig:
         return self._cfg.getfloat('AUTOENCODER', 'beta_param', fallback=0.3)
 
 
-def load_configs():
+def load_configs(parent_config_file=None, transformer_config_file=None,
+                 parent_override_file=None, transformer_override_file=None):
     """
     加载完整配置，返回 (parent_config, transformer_config)。
     Load full configuration, returns (parent_config, transformer_config).
@@ -181,9 +203,22 @@ def load_configs():
     parent_config:      上层 configfile.ini / parent Config object
     transformer_config: 本目录 config_transformer.ini / TransformerConfig object
     """
-    parent_ini = os.path.join(_PARENT_DIR, 'configfile.ini')
-    parent_config = ParentConfig(config_file=parent_ini)
-    transformer_config = TransformerConfig()
+    if parent_config_file is None:
+        parent_config_file = os.path.join(_PARENT_DIR, 'configfile.ini')
+    if transformer_config_file is None:
+        transformer_config_file = os.path.join(_THIS_DIR, 'config_transformer.ini')
+
+    parent_extras = [parent_override_file] if parent_override_file else None
+    transformer_extras = [transformer_override_file] if transformer_override_file else None
+
+    parent_config = ParentConfig(
+        config_file=parent_config_file,
+        extra_config_files=parent_extras
+    )
+    transformer_config = TransformerConfig(
+        config_file=transformer_config_file,
+        extra_config_files=transformer_extras
+    )
     return parent_config, transformer_config
 
 

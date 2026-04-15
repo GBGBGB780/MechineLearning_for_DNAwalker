@@ -21,6 +21,7 @@
   - [Step 4: Autoencoder Training / 数字孪生训练](#step-4-autoencoder-training--数字孪生训练)
   - [Step 5: Prediction / 预测](#step-5-prediction--预测)
   - [Step 6: MATLAB Verification / MATLAB 验证](#step-6-matlab-verification--matlab-验证)
+- [Smoke Test / 冒烟测试](#smoke-test--冒烟测试)
 - [Setup / 环境配置](#setup--环境配置)
 - [Configuration / 配置文件说明](#configuration--配置文件说明)
 - [HPC Guide / HPC 使用指南](#hpc-guide--hpc-使用指南)
@@ -251,6 +252,29 @@ verify              % Reads matlab_input_params.txt, runs forward ODE, plots com
 This runs the forward ODE simulation with the predicted parameters and overlays the result on the experimental curves for visual verification.
 
 使用预测参数运行正向 ODE 仿真，并与实验曲线叠加对比以进行目视验证。
+
+---
+
+## Smoke Test / 冒烟测试
+
+We provide an automated smoke test script to quickly verify that the entire pipeline (data generation, format conversion, CNN training, and Transformer training) is functioning correctly without waiting for a full dataset generation or training process.
+
+我们提供了一个自动化的冒烟测试脚本，可以快速验证整个工作流（数据生成、格式转换、CNN 训练和 Transformer 训练）是否正常运行，这就无需漫长地等待完整的数据集生成或模型训练过程。
+
+```powershell
+# Run the complete smoke test / 运行完整的冒烟测试
+.\run_smoke_test.ps1
+```
+
+**Steps executed during the smoke test / 冒烟测试执行的步骤:**
+1. **Data Generation / 数据生成:** Runs `gendata_smoke.m` in MATLAB to rapidly generate a miniature dataset (`training_dataset_smoke.mat`) with 20 samples.
+2. **Format Conversion / 格式转换:** Uses `mat_to_npz.py` to convert the `.mat` file into `.npz` format.
+3. **CNN Smoke Training / CNN 冒烟训练:** Runs `train_mlp.py` using `configfile.smoke.ini` (which specifies lightweight epochs/batch limits) to train for 2 epochs and evaluate the logic.
+4. **Transformer Smoke Training / Transformer 冒烟训练:** Runs `train_transformer.py` using the `--smoke` flag along with smoke configuration file overrides (`config_transformer.smoke.ini`), also training just for a few epochs.
+
+This is highly recommended after modifying any core module to ensure no critical bugs were introduced into the pipeline logic.
+
+强烈建议在修改核心模块后运行此冒烟测试，以确保没有引入会破坏流水线原本逻辑的错误。
 
 ---
 

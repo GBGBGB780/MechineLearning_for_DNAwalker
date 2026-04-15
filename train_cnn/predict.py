@@ -14,11 +14,13 @@ predict.py — CNN experimental data prediction script
     python predict.py
 """
 
-import torch
-import numpy as np
-import pandas as pd
 import os
 import sys
+import argparse
+
+import numpy as np
+import pandas as pd
+import torch
 from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter
 
@@ -106,13 +108,13 @@ def write_matlab_input(params_dict):
         print(f"Error: {e}")
 
 
-def predict_parameters():
+def predict_parameters(config_override=None):
     """
     完整预测流程。/ Full prediction pipeline.
     """
     # 初始化 / Initialize
     try:
-        predictor = NanorobotPredictor()
+        predictor = NanorobotPredictor(config_override_file=config_override)
     except Exception as e:
         print(f"初始化失败 / Init failed: {e}")
         return
@@ -179,4 +181,10 @@ def predict_parameters():
 
 
 if __name__ == "__main__":
-    predict_parameters()
+    parser = argparse.ArgumentParser(description="Run CNN prediction on experimental data.")
+    parser.add_argument(
+        "--config",
+        help="Optional override INI layered on top of the repo root configfile.ini."
+    )
+    args = parser.parse_args()
+    predict_parameters(config_override=args.config)

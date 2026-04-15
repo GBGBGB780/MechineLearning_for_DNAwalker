@@ -11,12 +11,14 @@ Trains the InverseCNN inverse model with adaptive weighted MSE loss.
     python train_mlp.py
 """
 
+import argparse
+import os
+import sys
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import numpy as np
-import os
-import sys
 
 # 路径设置 / Path setup
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -31,14 +33,25 @@ from model_cnn import InverseCNN
 from config_loader import Config
 
 
-def train():
+def _resolve_cli_path(path):
+    """Resolve a CLI-provided path against the current working directory."""
+    if path is None:
+        return None
+    return os.path.abspath(path)
+
+
+def train(config_override=None):
     """
     完整训练流程：加载配置 → 加载数据 → 训练 → 测试评估。
     Full training pipeline: load config → load data → train → test evaluation.
     """
     # --- 0. 加载配置 / Load config ---
     print("--- 0. 加载配置文件 / Loading config ---")
-    config = Config(config_file=os.path.join(_PARENT_DIR, 'configfile.ini'))
+    override_files = [_resolve_cli_path(config_override)] if config_override else None
+    config = Config(
+        config_file=os.path.join(_PARENT_DIR, 'configfile.ini'),
+        extra_config_files=override_files
+    )
 
     INPUT_SIZE = config.get_input_size()
     OUTPUT_SIZE = config.get_output_size()
@@ -178,4 +191,10 @@ def train():
 
 
 if __name__ == "__main__":
-    train()
+    parser = argparse.ArgumentParser(description="Train the CNN inverse model.")
+    parser.add_argument(
+        "--config",
+        help="Optional override INI layered on top of the repo root configfile.ini."
+    )
+    args = parser.parse_args()
+    train(config_override=args.config)

@@ -29,11 +29,17 @@ class TransformerPredictor:
     Transformer 预测器：加载训练好的模型并执行推理。
     Transformer predictor: loads a trained model and performs inference.
     """
-    def __init__(self, model_path=None):
+    def __init__(self, model_path=None, parent_config_override_file=None,
+                 transformer_config_override_file=None):
         print("--- 正在初始化 Transformer 预测器 ---")
         
         # 1. 加载配置
-        self.parent_config, self.transformer_config = load_configs()
+        self.parent_config, self.transformer_config = load_configs(
+            parent_override_file=os.path.abspath(parent_config_override_file)
+            if parent_config_override_file else None,
+            transformer_override_file=os.path.abspath(transformer_config_override_file)
+            if transformer_config_override_file else None
+        )
         
         # 2. 路径设置
         self.model_path = model_path if model_path else self.transformer_config.get_model_save_path()

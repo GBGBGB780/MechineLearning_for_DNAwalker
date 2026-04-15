@@ -56,13 +56,23 @@ def get_cosine_schedule_with_warmup(optimizer, warmup_steps: int, total_steps: i
 # 主训练函数
 # ─────────────────────────────────────────────────────────────────────────────
 
-def train(smoke_test: bool = False):
+def _resolve_cli_path(path):
+    """Resolve a CLI-provided path against the current working directory."""
+    if path is None:
+        return None
+    return os.path.abspath(path)
+
+
+def train(smoke_test: bool = False, parent_config_override=None, transformer_config_override=None):
     # ── 0. 加载配置 ──────────────────────────────────────────────────────────
     print("=" * 65)
     print("  DNA Walker Transformer Trainer")
     print("=" * 65)
     print("\n--- 0. 加载配置 ---")
-    parent_config, transformer_config = load_configs()
+    parent_config, transformer_config = load_configs(
+        parent_override_file=_resolve_cli_path(parent_config_override),
+        transformer_override_file=_resolve_cli_path(transformer_config_override)
+    )
 
     OUTPUT_SIZE  = parent_config.get_output_size()
     BATCH_SIZE   = transformer_config.get_batch_size()
@@ -278,7 +288,19 @@ def train(smoke_test: bool = False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='DNA Walker Transformer Trainer')
+    parser.add_argument(
+        '--config',
+        help='Optional override INI layered on top of the repo root configfile.ini'
+    )
+    parser.add_argument(
+        '--transformer-config',
+        help='Optional override INI layered on top of train_transformer/config_transformer.ini'
+    )
     parser.add_argument('--smoke', action='store_true',
                         help='仅运行 2 个 epoch 的烟雾测试，验证流程正常')
     args = parser.parse_args()
-    train(smoke_test=args.smoke)
+    train(
+        smoke_test=args.smoke,
+        parent_config_override=args.config,
+        transformer_config_override=args.transformer_config
+    )

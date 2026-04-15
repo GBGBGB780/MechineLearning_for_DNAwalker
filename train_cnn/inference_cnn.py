@@ -28,7 +28,7 @@ class NanorobotPredictor:
     CNN predictor: loads a trained model and performs inference.
     """
 
-    def __init__(self, config_file=None, model_path=None):
+    def __init__(self, config_file=None, model_path=None, config_override_file=None):
         """
         初始化预测器。/ Initialize predictor.
 
@@ -40,8 +40,11 @@ class NanorobotPredictor:
 
         if config_file is None:
             config_file = os.path.join(_PARENT_DIR, 'configfile.ini')
+        else:
+            config_file = os.path.abspath(config_file)
 
-        self.config = Config(config_file)
+        extra_config_files = [os.path.abspath(config_override_file)] if config_override_file else None
+        self.config = Config(config_file, extra_config_files=extra_config_files)
         self.input_size = self.config.get_input_size()
         self.output_size = self.config.get_output_size()
         self.param_ranges = self.config.get_param_ranges()

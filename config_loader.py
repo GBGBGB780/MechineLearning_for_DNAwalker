@@ -15,26 +15,45 @@ import sys
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def _normalize_config_files(config_file, extra_config_files=None):
+    """Return an ordered list of config files with existence checks."""
+    config_files = [config_file]
+    if extra_config_files:
+        if isinstance(extra_config_files, (str, os.PathLike)):
+            config_files.append(extra_config_files)
+        else:
+            config_files.extend(extra_config_files)
+
+    normalized = []
+    for path in config_files:
+        if path is None:
+            continue
+        path = os.fspath(path)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"配置文件不存在 / Config not found: {path}")
+        normalized.append(path)
+    return normalized
+
+
 class Config:
     """
     统一的配置管理类。/ Unified configuration manager.
     从 configfile.ini 读取所有参数。/ Reads all parameters from configfile.ini.
     """
 
-    def __init__(self, config_file='configfile.ini'):
+    def __init__(self, config_file='configfile.ini', extra_config_files=None):
         """
         初始化配置加载器。/ Initialize config loader.
 
         Args:
             config_file: 配置文件路径 / config file path, default 'configfile.ini'
         """
-        if not os.path.exists(config_file):
-            raise FileNotFoundError(f"配置文件不存在 / Config not found: {config_file}")
-
+        config_files = _normalize_config_files(config_file, extra_config_files)
         self.config = configparser.ConfigParser()
-        self.config.read(config_file, encoding='utf-8')
-        self.config_file = config_file
-        self._config_dir = os.path.dirname(os.path.abspath(config_file))
+        self.config.read(config_files, encoding='utf-8')
+        self.config_file = config_files[0]
+        self.config_files = config_files
+        self._config_dir = os.path.dirname(os.path.abspath(self.config_file))
 
     def _resolve_from_config_dir(self, path):
         """将配置中的路径解析为绝对路径。/ Resolve config path against config dir."""
@@ -292,6 +311,8 @@ class Config:
         if not os.path.isabs(path):
             if path.startswith('./'):
                 path = path[2:]
+            if os.path.dirname(path):
+                return self._to_cwd_relative(self._resolve_from_config_dir(path))
             return os.path.join(self.get_output_path(), path)
         return self._to_cwd_relative(path)
 

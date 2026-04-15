@@ -18,26 +18,46 @@
 
 %% 1. 设置和配置
 clc;
-clear;
+if exist('DNAWALKER_GENDATA_KEEP_WORKSPACE', 'var') && DNAWALKER_GENDATA_KEEP_WORKSPACE
+    clearvars -except DNAWALKER_GENDATA_KEEP_WORKSPACE target_num_samples initial_sample_ratio simu_time output_filename MAX_BATCH_SIZE max_rounds min_dt_threshold parpool_workers
+else
+    clear;
+end
 rng('default'); % 确保 LHS 采样的可复现性
 
 disp('开始生成数据集...');
 tic; % 开始计时
 
 % --- 从您的需求中定义 ---
-target_num_samples = 30000;      % 目标合格样本总数
-initial_sample_ratio = 1.1;       % 初始采样冗余比例（生成3倍样本以应对质量过滤）
+if ~exist('target_num_samples', 'var')
+    target_num_samples = 30000;      % 目标合格样本总数
+end
+if ~exist('initial_sample_ratio', 'var')
+    initial_sample_ratio = 1.1;       % 初始采样冗余比例（生成3倍样本以应对质量过滤）
+end
 num_samples = round(target_num_samples * initial_sample_ratio);  % 初始生成样本数
 
-simu_time = 130;    % 模拟时间为130min
+if ~exist('simu_time', 'var')
+    simu_time = 130;    % 模拟时间为130min
+end
 num_time_points = simu_time * 60 + 1;     % 标准化的时间点数量，总时间130min，因此7800点（秒），加上t=0，所以7801
-output_filename = 'training_dataset.mat';
+if ~exist('output_filename', 'var')
+    output_filename = 'training_dataset.mat';
+end
 if exist(output_filename, 'file')
     delete(output_filename); % 删除旧文件，确保从头开始
 end
 
 % --- 内存优化配置 ---
-MAX_BATCH_SIZE = 6000; % 每批次最大样本数，防止内存溢出
+if ~exist('MAX_BATCH_SIZE', 'var')
+    MAX_BATCH_SIZE = 6000; % 每批次最大样本数，防止内存溢出
+end
+if ~exist('min_dt_threshold', 'var')
+    min_dt_threshold = 1.2e-5;
+end
+if ~exist('max_rounds', 'var')
+    max_rounds = 500;  % 最大补充轮数，防止无限循环
+end
 
 fprintf('=== 数据集生成配置 ===\n');
 fprintf('目标合格样本数: %d\n', target_num_samples);
@@ -114,7 +134,11 @@ fixed_params.n_track_2 = 55;
 %% 4. 初始化
 disp('正在启动并行计算池...');
 if isempty(gcp('nocreate'))
-    parpool; % 如果没有活动的池，则启动一个
+    if exist('parpool_workers', 'var') && ~isempty(parpool_workers)
+        parpool('local', parpool_workers);
+    else
+        parpool; % 如果没有活动的池，则启动一个
+    end
 end
 disp('并行池已启动。');
 
@@ -163,7 +187,7 @@ for b = 1:num_batches_init
     
     % 运行模拟、验证并保存
     [n_ok, ~, bin_counts] = run_batch_simulation_and_save(Y_batch, fixed_params, m, ...
-        num_time_points, 1.2e-5, sprintf('初始批次 %d', b), bin_counts, bin_edges, max_per_bin);
+        num_time_points, min_dt_threshold, sprintf('初始批次 %d', b), bin_counts, bin_edges, max_per_bin);
     
     total_saved = total_saved + n_ok;
     total_generated_count = total_generated_count + current_batch_size;
@@ -173,7 +197,6 @@ disp(['初始阶段完成。当前合格样本数: ', num2str(total_saved)]);
 
 %% 6. 第二阶段：补充采样 (分批处理)
 round_num = 1;
-max_rounds = 500;  % 最大补充轮数，防止无限循环，设置一个比较大的数保证足够合格数据
 
 while total_saved < target_num_samples && round_num <= max_rounds
     needed = target_num_samples - total_saved;
@@ -212,7 +235,7 @@ while total_saved < target_num_samples && round_num <= max_rounds
         
         % 运行模拟、验证并保存
         [n_ok, ~, bin_counts] = run_batch_simulation_and_save(Y_batch, fixed_params, m, ...
-            num_time_points, 1.2e-5, sprintf('补充(轮%d)批次%d', round_num, b), bin_counts, bin_edges, max_per_bin);
+            num_time_points, min_dt_threshold, sprintf('补充(轮%d)批次%d', round_num, b), bin_counts, bin_edges, max_per_bin);
         
         total_saved = total_saved + n_ok;
         total_generated_count = total_generated_count + current_batch_size;

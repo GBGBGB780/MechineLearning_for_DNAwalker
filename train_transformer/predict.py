@@ -7,11 +7,12 @@ predict.py — Transformer experimental data prediction script
 Same logic as CNN predict.py, but uses Transformer model for inference.
 """
 
+import argparse
 import os
 import sys
-import torch
 import numpy as np
 import pandas as pd
+import torch
 from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter
 
@@ -98,10 +99,13 @@ def write_matlab_input(params_dict):
         print(f"写入失败: {e}")
 
 
-def main():
+def main(parent_config_override=None, transformer_config_override=None):
     # 1. 初始化预测器
     try:
-        predictor = TransformerPredictor()
+        predictor = TransformerPredictor(
+            parent_config_override_file=parent_config_override,
+            transformer_config_override_file=transformer_config_override
+        )
     except Exception as e:
         print(f"初始化预测器失败: {e}")
         return
@@ -135,4 +139,17 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description='Run Transformer prediction on experimental data.')
+    parser.add_argument(
+        '--config',
+        help='Optional override INI layered on top of the repo root configfile.ini'
+    )
+    parser.add_argument(
+        '--transformer-config',
+        help='Optional override INI layered on top of train_transformer/config_transformer.ini'
+    )
+    args = parser.parse_args()
+    main(
+        parent_config_override=args.config,
+        transformer_config_override=args.transformer_config
+    )
