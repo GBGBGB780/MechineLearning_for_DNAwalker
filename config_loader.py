@@ -346,27 +346,6 @@ class Config:
         """获取 Nelder-Mead 上界 / Get Nelder-Mead upper bound."""
         return self.config.getfloat('PREDICTION', 'nm_upper_bound', fallback=0.95)
 
-    # ==================== AUTOENCODER 自编码器训练参数 ====================
-
-    def get_decoder_num_epochs(self):
-        """获取 Decoder 训练轮数 / Get Decoder training epochs."""
-        return self.config.getint('AUTOENCODER', 'decoder_num_epochs', fallback=500)
-
-    def get_decoder_lr(self):
-        """获取 Decoder 学习率 / Get Decoder learning rate."""
-        return self.config.getfloat('AUTOENCODER', 'decoder_lr', fallback=0.001)
-
-    def get_decoder_patience(self):
-        """获取 Decoder Early Stopping 耐心值 / Get Decoder early stopping patience."""
-        return self.config.getint('AUTOENCODER', 'decoder_patience', fallback=100)
-
-    def get_alpha_recon(self):
-        """获取重构 Loss 权重 α / Get reconstruction loss weight α."""
-        return self.config.getfloat('AUTOENCODER', 'alpha_recon', fallback=0.7)
-
-    def get_beta_param(self):
-        """获取参数 Loss 权重 β / Get parameter loss weight β."""
-        return self.config.getfloat('AUTOENCODER', 'beta_param', fallback=0.3)
 
 
 if __name__ == "__main__":
@@ -382,7 +361,6 @@ if __name__ == "__main__":
         print(f"Conv1:       {config.get_conv1_params()}")
         print(f"SG window:   {config.get_sg_window()}")
         print(f"Ensemble:    {config.get_ensemble_size()}")
-        print(f"Decoder LR:  {config.get_decoder_lr()}")
         print("\n配置加载成功 / Config loaded successfully!")
     except Exception as e:
         print(f"配置加载失败 / Config load failed: {e}")

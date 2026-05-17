@@ -18,9 +18,8 @@
   - [Step 1: Data Generation (MATLAB) / 数据生成](#step-1-data-generation-matlab--数据生成)
   - [Step 2: CNN Training / CNN 训练](#step-2-cnn-training--cnn-训练)
   - [Step 3: Transformer Training / Transformer 训练](#step-3-transformer-training--transformer-训练)
-  - [Step 4: Autoencoder Training / 数字孪生训练](#step-4-autoencoder-training--数字孪生训练)
-  - [Step 5: Prediction / 预测](#step-5-prediction--预测)
-  - [Step 6: MATLAB Verification / MATLAB 验证](#step-6-matlab-verification--matlab-验证)
+  - [Step 4: Prediction / 预测](#step-4-prediction--预测)
+  - [Step 5: MATLAB Verification / MATLAB 验证](#step-5-matlab-verification--matlab-验证)
 - [Smoke Test / 冒烟测试](#smoke-test--冒烟测试)
 - [Setup / 环境配置](#setup--环境配置)
 - [Configuration / 配置文件说明](#configuration--配置文件说明)
@@ -43,11 +42,7 @@ Two parallel model architectures are provided:
 | Model | Architecture | Input Shape | Strength |
 |-------|-------------|-------------|----------|
 | **CNN (MLP)** | 1D-Conv → FC → Sigmoid | `(N, 23403)` flattened | Fast, robust baseline |
-| **Transformer** | PatchTST + TokenMixer → Sigmoid | `(N, 3, 7801)` 3D | Global receptive field, explicit channel interaction |
-
-Both models also support an **Encoder-Decoder (Digital Twin)** training mode where
-a ForwardDecoder learns the forward mapping (parameters → curves) to provide an
-additional reconstruction loss signal.
+| **Transformer** | PatchTST + MHA → Sigmoid | `(N, 3, 7801)` 3D | Global receptive field, explicit channel interaction |
 
 ---
 
@@ -61,7 +56,7 @@ flowchart LR
 
     subgraph Training ["Python Training / 训练"]
         B --> C["CNN (train_cnn/)<br/>1D-CNN Inverse Model"]
-        B --> D["Transformer (train_transformer/)<br/>PatchTST + TokenMixer"]
+        B --> D["Transformer (train_transformer/)<br/>PatchTST + MHA"]
         C --> E["best_mlp_model.pth"]
         D --> F["best_transformer_model.pth"]
     end
@@ -87,36 +82,35 @@ flowchart LR
 MachineLearning_for_DNAwalker/
 │
 ├── configfile.ini              # 全局配置 / Global config (physics, training, data)
+├── configfile.smoke.ini        # 冒烟测试配置覆盖 / Smoke test config override
 ├── config_loader.py            # 统一配置管理类 / Unified config manager
 ├── README.md                   # 本文件 / This file
 ├── requirements.txt            # Python 依赖 / Python dependencies
+├── .gitignore                  # Git 忽略规则 / Git ignore rules
 │
 ├── train_cnn/                  # ===== CNN (MLP) 模型 =====
-│   ├── model_cnn.py            #   InverseCNN + ForwardDecoder 模型定义 / Model definitions
+│   ├── model_cnn.py            #   InverseCNN 模型定义 / Model definition
 │   ├── data_loader.py          #   数据加载与预处理 / Data loading & preprocessing
 │   ├── train_mlp.py            #   主训练脚本 / Main training script
-│   ├── train_autoencoder.py    #   Encoder-Decoder 三阶段训练 / 3-phase Encoder-Decoder
 │   ├── inference_cnn.py        #   推理模块 / Inference module
 │   ├── predict.py              #   实验数据预测 / Experimental prediction
 │   ├── verify.m                #   MATLAB 正向验证 / MATLAB forward verification
 │   ├── optimize_params.m       #   MATLAB 局部优化 / MATLAB local optimization
 │   ├── run_job.sh              #   HPC PBS 作业脚本 / HPC PBS job script
-│   └── results/                #   模型输出 / Model outputs
+│   └── results/                #   模型输出 / Model outputs (gitignored)
 │
 ├── train_transformer/          # ===== Transformer 模型 =====
-│   ├── config_transformer.ini  #   Transformer 专用超参数 / Transformer-specific hyperparams
-│   ├── config_loader_transformer.py  #  配置加载器 / Config loader
-│   ├── model_transformer.py    #   PatchTST + TokenMixer 模型 / Model definition
+│   ├── config_transformer.ini  #   Transformer 专用超参数 / Transformer hyperparams
+│   ├── config_loader_transformer.py  # 配置加载器 / Config loader
+│   ├── model_transformer.py    #   PatchTST + MHA 模型 / Model definition
 │   ├── dataset.py              #   3D 数据加载 / 3D data loading (X stays 3D)
 │   ├── train_transformer.py    #   主训练脚本 / Main training script
-│   ├── train_transformer_autoencoder.py  # Encoder-Decoder 训练 / Encoder-Decoder
 │   ├── inference_transformer.py #  推理模块 / Inference module
 │   ├── predict.py              #   实验数据预测 / Experimental prediction
 │   ├── verify.m                #   MATLAB 正向验证 / MATLAB forward verification
 │   ├── optimize_params.m       #   MATLAB 局部优化 / MATLAB local optimization
 │   ├── run_job.sh              #   HPC PBS 作业脚本 / HPC PBS job script
-│   ├── run_autoencoder_job.sh  #   Autoencoder HPC 脚本 / Autoencoder HPC script
-│   └── results/                #   模型输出 / Model outputs
+│   └── results/                #   模型输出 / Model outputs (gitignored)
 │
 ├── utils/                      # ===== 工具脚本 / Utility Scripts =====
 │   ├── check_npz.py            #   NPZ 数据集检查 / NPZ dataset inspector
@@ -124,10 +118,11 @@ MachineLearning_for_DNAwalker/
 │   └── stretch_data.py         #   实验数据振幅拉伸 / Experimental data stretching
 │
 ├── gendata.m                   # MATLAB 数据生成脚本 / MATLAB data generation
-└── results/                    # 共用数据集 / Shared datasets
+├── gendata_smoke.m             # MATLAB 冒烟数据生成 / MATLAB smoke data generation
+├── run_smoke_test.ps1          # 端到端冒烟测试 / End-to-end smoke test
+└── results/                    # 共用数据集 / Shared datasets (gitignored)
     ├── training_dataset.npz    #   训练数据 / Training data
-    ├── y_scaler.pkl            #   Y 归一化器 / Y scaler
-    └── best_mlp_model.pth      #   CNN 最佳模型 / CNN best model
+    └── *.xlsx                  #   实验数据 / Experimental data
 ```
 
 ---
@@ -191,39 +186,14 @@ python train_transformer.py --smoke      # Smoke test / 烟雾测试
 ```
 
 - Uses AdamW optimizer with Cosine Warmup scheduler.
-- TokenMixer replaces Multi-Head Attention for O(B×T×D) complexity.
+- PatchTST architecture with Multi-Head Attention for temporal and cross-channel modeling.
 - 使用 AdamW 优化器 + Cosine Warmup 学习率调度。
-- TokenMixer 替换多头注意力，复杂度降至 O(B×T×D)。
+- PatchTST 架构 + 多头注意力机制，分别建模时间维度和跨通道关系。
 - **Output / 输出:** `results/best_transformer_model.pth`
 
 ---
 
-### Step 4: Autoencoder Training / 数字孪生训练
-
-The Encoder-Decoder ("Digital Twin") training adds a reconstruction loss:
-
-数字孪生训练添加重构损失：
-
-```
-Phase 1: Train ForwardDecoder independently    → Y → X̂ (forward surrogate)
-Phase 2: Freeze Decoder, train Encoder         → X → Ŷ → [Frozen] → X̂
-Phase 3: (Optional) Joint fine-tuning          → end-to-end with lower LR
-```
-
-```powershell
-# CNN Autoencoder / CNN 自编码器
-cd train_cnn/
-python train_autoencoder.py
-
-# Transformer Autoencoder / Transformer 自编码器
-cd train_transformer/
-python train_transformer_autoencoder.py
-python train_transformer_autoencoder.py --resume   # Resume from checkpoint / 断点续训
-```
-
----
-
-### Step 5: Prediction / 预测
+### Step 4: Prediction / 预测
 
 ```powershell
 # CNN prediction / CNN 预测
@@ -241,7 +211,7 @@ Pipeline: Load Excel → Interpolation → SG Smoothing → DL Prediction (Test-
 
 ---
 
-### Step 6: MATLAB Verification / MATLAB 验证
+### Step 5: MATLAB Verification / MATLAB 验证
 
 ```matlab
 % In MATLAB / 在 MATLAB 中
@@ -314,7 +284,6 @@ CNN 和 Transformer 共用的全局配置：
 | `[TRAINING_PARAMETER_RANGES]` | Min-max ranges / 参数范围 |
 | `[NANOROBOT_MODELING]` | Experimental data path, simulation time / 实验数据路径、仿真时间 |
 | `[PREDICTION]` | SG smoothing, Test-Time Ensemble / SG 平滑、集成预测 |
-| `[AUTOENCODER]` | Decoder training, loss weights / Decoder 训练、损失权重 |
 
 ### `config_transformer.ini` (train_transformer/)
 
@@ -324,7 +293,6 @@ Transformer-specific hyperparameters:
 |---------|----------------|
 | `[TRANSFORMER]` | d_model, n_heads, n_layers, patch_size, dropout, optimizer / 模型结构、优化器 |
 | `[PATHS]` | Dataset file path / 数据集路径 |
-| `[AUTOENCODER]` | Transformer autoencoder params / Transformer 自编码器参数 |
 
 ---
 
@@ -342,15 +310,7 @@ qsub run_job.sh
 # Transformer training on HPC / HPC 上训练 Transformer
 cd train_transformer/
 qsub run_job.sh
-
-# Transformer autoencoder with checkpointing / Transformer 自编码器（支持断点续训）
-qsub run_autoencoder_job.sh
 ```
-
-The Transformer autoencoder script (`train_transformer_autoencoder.py`) supports:
-- `--resume`: Resume from last checkpoint / 从断点恢复
-- `--max-hours 23`: Auto-save before HPC wall-time limit / 接近时限自动保存
-- `--enable-phase3`: Enable optional Phase 3 joint fine-tuning / 启用 Phase 3
 
 ---
 
@@ -359,7 +319,7 @@ The Transformer autoencoder script (`train_transformer_autoencoder.py`) supports
 |  | CNN (`train_cnn/`) | Transformer (`train_transformer/`) |
 |--|---|---|
 | **Input / 输入** | `(N, 23403)` flattened / 展平 | `(N, 3, 7801)` 3D |
-| **Long-range / 长程依赖** | ❌ Local receptive field / 局部感受野 | ✅ Global via TokenMixer / 全局 |
+| **Long-range / 长程依赖** | ❌ Local receptive field / 局部感受野 | ✅ Global via Multi-Head Attention / 全局 |
 | **Channel relation / 通道关系** | Implicit fusion / 隐式融合 | Explicit Cross-Channel Attention / 显式 |
 | **Optimizer / 优化器** | Adam | AdamW |
 | **LR Schedule / 学习率调度** | ReduceLROnPlateau | Cosine Warmup |

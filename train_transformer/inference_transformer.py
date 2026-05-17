@@ -20,7 +20,7 @@ if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
 from config_loader_transformer import load_configs
-from model_builder import build_transformer_model
+from model_transformer import build_transformer_model
 
 
 def _format_checkpoint_metric(checkpoint):

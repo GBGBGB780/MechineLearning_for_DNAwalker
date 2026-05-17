@@ -30,7 +30,7 @@ if _THIS_DIR not in sys.path:
 
 from config_loader_transformer import load_configs
 from dataset import load_and_preprocess_data_3d
-from model_builder import build_transformer_model
+from model_transformer import build_transformer_model
 
 
 # ─────────────────────────────────────────────────────────────────────────────

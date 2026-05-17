@@ -87,11 +87,11 @@ class TransformerConfig:
         return self._cfg.getint('TRANSFORMER', 'd_model')
 
     def get_n_heads(self) -> int:
-        """注意力头数（TokenMixer 模式下保留兼容）/ Attention heads (kept for compatibility)."""
+        """多头注意力头数 / Number of attention heads."""
         return self._cfg.getint('TRANSFORMER', 'n_heads')
 
     def get_n_layers(self) -> int:
-        """时间维度 TokenMixer 层数 / Temporal TokenMixer block count."""
+        """时间维度 Transformer 层数 / Temporal Transformer block count."""
         return self._cfg.getint('TRANSFORMER', 'n_layers')
 
     def get_d_ff(self) -> int:
@@ -99,11 +99,11 @@ class TransformerConfig:
         return self._cfg.getint('TRANSFORMER', 'd_ff')
 
     def get_cross_channel_layers(self) -> int:
-        """通道间 TokenMixer 层数 / Cross-channel TokenMixer block count."""
+        """跨通道注意力层数 / Cross-channel attention block count."""
         return self._cfg.getint('TRANSFORMER', 'cross_channel_layers', fallback=2)
 
     def get_dropout(self) -> float:
-        """TokenMixer + FFN Dropout / TokenMixer + FFN Dropout rate."""
+        """Attention + FFN Dropout 率 / Attention + FFN Dropout rate."""
         return self._cfg.getfloat('TRANSFORMER', 'dropout')
 
     def get_dropout_head(self) -> float:
@@ -171,27 +171,6 @@ class TransformerConfig:
             os.makedirs(dir_name, exist_ok=True)
         return path
 
-    # ===== AUTOENCODER 参数 / Autoencoder Parameters =====
-
-    def get_decoder_num_epochs(self) -> int:
-        """Decoder 训练轮数 / Decoder training epochs."""
-        return self._cfg.getint('AUTOENCODER', 'decoder_num_epochs', fallback=500)
-
-    def get_decoder_lr(self) -> float:
-        """Decoder 学习率 / Decoder learning rate."""
-        return self._cfg.getfloat('AUTOENCODER', 'decoder_lr', fallback=0.001)
-
-    def get_decoder_patience(self) -> int:
-        """Decoder Early Stopping 耐心值 / Decoder early stopping patience."""
-        return self._cfg.getint('AUTOENCODER', 'decoder_patience', fallback=100)
-
-    def get_alpha_recon(self) -> float:
-        """重构 Loss 权重 α / Reconstruction loss weight α."""
-        return self._cfg.getfloat('AUTOENCODER', 'alpha_recon', fallback=0.7)
-
-    def get_beta_param(self) -> float:
-        """参数 Loss 权重 β / Parameter loss weight β."""
-        return self._cfg.getfloat('AUTOENCODER', 'beta_param', fallback=0.3)
 
 
 def load_configs(parent_config_file=None, transformer_config_file=None,

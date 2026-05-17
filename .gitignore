@@ -4,11 +4,13 @@ __pycache__/
 .ipynb_checkpoints/
 .pytest_cache/
 
-# Model outputs & Data
+# Model outputs & Data (large binary files)
 *.pth
 *.mat
 *.npz
 *.pkl
+
+# Training outputs
 results/
 train_cnn/results/
 train_transformer/results/
@@ -18,5 +20,6 @@ train_transformer/experiments/
 .idea/
 .vscode/
 
-# MacOS
+# OS
 .DS_Store
+Thumbs.db
