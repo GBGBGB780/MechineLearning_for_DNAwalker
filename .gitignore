@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Model outputs & Data
+*.pth
+*.mat
+*.npz
+*.pkl
+results/
+train_cnn/results/
+train_transformer/results/
+train_transformer/experiments/
+
+# IDE
+.idea/
+.vscode/
+
+# MacOS
+.DS_Store

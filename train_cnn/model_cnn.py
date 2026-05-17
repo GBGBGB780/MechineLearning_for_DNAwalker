@@ -1,13 +1,11 @@
 # coding=utf-8
 """
-model_cnn.py — 1D-CNN 逆向模型 & 正向解码器定义
-model_cnn.py — 1D-CNN inverse model & forward decoder definitions
+model_cnn.py — 1D-CNN 逆向模型
+model_cnn.py — 1D-CNN inverse model
 
 模型列表 / Models:
   - InverseCNN:     荧光曲线 → 物理参数 (逆向推理)
                     Fluorescence curves → physical parameters (inverse inference)
-  - ForwardDecoder: 物理参数 → 荧光曲线 (正向模拟近似，数字孪生)
-                    Physical parameters → fluorescence curves (forward surrogate, digital twin)
 """
 
 import torch
@@ -124,96 +122,3 @@ class InverseCNN(nn.Module):
         return x
 
 
-class ForwardDecoder(nn.Module):
-    """
-    正向解码器（数字孪生近似器）：从参数重构荧光曲线。
-    Forward decoder (digital twin surrogate): reconstructs fluorescence curves from parameters.
-
-    架构 / Architecture:
-        MLP 扩展 → 转置卷积上采样 → 插值至精确长度
-        MLP expansion → transposed convolution upsampling → interpolation to exact length
-
-    输入 / Input:  (B, 7) 归一化参数 / normalized parameters
-    输出 / Output: (B, 3*seq_length) 重构曲线（展平）/ reconstructed curves (flattened)
-    """
-
-    def __init__(self, input_size, config):
-        """
-        初始化 ForwardDecoder。/ Initialize ForwardDecoder.
-
-        Args:
-            input_size: 参数维度 (通常为 7) / parameter dimension (typically 7)
-            config:     Config 配置对象 / Config object
-        """
-        super(ForwardDecoder, self).__init__()
-
-        if config is None:
-            raise ValueError("Config object is required for ForwardDecoder initialization.")
-
-        self.num_curves = config.get_num_curves()
-        self.seq_length = config.get_seq_length()
-
-        # 从配置读取 Encoder 的通道数（镜像使用）/ Mirror Encoder channel counts
-        conv4 = config.get_conv4_params()
-        conv3 = config.get_conv3_params()
-        conv2 = config.get_conv2_params()
-        conv1 = config.get_conv1_params()
-        dec_init_len = 64  # 对应 Encoder 的 AdaptiveAvgPool1d(64) / matches Encoder's pool output
-
-        # MLP 扩展层 / MLP expansion: 7 → 256*64
-        self.expander = nn.Sequential(
-            nn.Linear(input_size, 256),
-            nn.ReLU(),
-            nn.Linear(256, 512),
-            nn.ReLU(),
-            nn.Linear(512, conv4['out_channels'] * dec_init_len),
-            nn.ReLU(),
-        )
-
-        # 转置卷积上采样（镜像 Encoder）/ Upsampling (mirroring Encoder)
-        self.decoder_convs = nn.Sequential(
-            # 阶段 1 / Stage 1: (256, 64) → (128, 128)
-            nn.Upsample(scale_factor=2, mode='linear', align_corners=False),
-            nn.Conv1d(conv4['out_channels'], conv3['out_channels'], kernel_size=5, padding=2),
-            nn.BatchNorm1d(conv3['out_channels']),
-            nn.ReLU(),
-            # 阶段 2 / Stage 2: (128, 128) → (64, 256)
-            nn.Upsample(scale_factor=2, mode='linear', align_corners=False),
-            nn.Conv1d(conv3['out_channels'], conv2['out_channels'], kernel_size=5, padding=2),
-            nn.BatchNorm1d(conv2['out_channels']),
-            nn.ReLU(),
-            # 阶段 3 / Stage 3: (64, 256) → (32, 512)
-            nn.Upsample(scale_factor=2, mode='linear', align_corners=False),
-            nn.Conv1d(conv2['out_channels'], conv1['out_channels'], kernel_size=5, padding=2),
-            nn.BatchNorm1d(conv1['out_channels']),
-            nn.ReLU(),
-            # 阶段 4 / Stage 4: (32, 512) → (16, 1024)
-            nn.Upsample(scale_factor=2, mode='linear', align_corners=False),
-            nn.Conv1d(conv1['out_channels'], 16, kernel_size=5, padding=2),
-            nn.BatchNorm1d(16),
-            nn.ReLU(),
-        )
-
-        # 最终调整层 / Final adjustment: channel → 3, interpolate to seq_length
-        self.final_conv = nn.Sequential(
-            nn.Conv1d(16, self.num_curves, kernel_size=7, padding=3),
-            # 不加激活函数，输出可正可负 / No activation, output can be positive or negative
-        )
-
-    def forward(self, params):
-        """
-        前向传播：从参数重构荧光曲线。
-        Forward pass: reconstruct fluorescence curves from parameters.
-
-        Args:
-            params: (B, 7) 归一化参数 / normalized parameters
-        Returns:
-            (B, 3*seq_length) 重构曲线（展平）/ reconstructed curves (flattened)
-        """
-        x = self.expander(params)                           # (B, 256*64)
-        x = x.view(-1, 256, 64)                             # (B, 256, 64)
-        x = self.decoder_convs(x)                            # (B, 16, 1024)
-        x = self.final_conv(x)                               # (B, 3, 1024)
-        x = nn.functional.interpolate(x, size=self.seq_length, mode='linear', align_corners=False)
-        x = x.view(x.size(0), -1)                           # (B, 3*seq_length)
-        return x
