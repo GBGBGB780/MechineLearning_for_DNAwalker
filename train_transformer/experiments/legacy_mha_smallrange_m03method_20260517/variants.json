@@ -1,0 +1,35 @@
+{
+  "variants": [
+    {
+      "tag": "s15_m03method_origknn_1024",
+      "job_name": "s15m03",
+      "dataset": "training_dataset_small_origknn_1024.npz",
+      "note": "Exact m03 weighted-from-scratch training on the orig-centered KNN subset (1024)."
+    },
+    {
+      "tag": "s16_m03method_dualunion_2048",
+      "job_name": "s16m03",
+      "dataset": "training_dataset_small_dualunion_2048.npz",
+      "note": "Exact m03 weighted-from-scratch training on the orig/gen union subset (2048)."
+    },
+    {
+      "tag": "s17_m03method_corridor_2048",
+      "job_name": "s17m03",
+      "dataset": "training_dataset_small_corridor_2048.npz",
+      "note": "Exact m03 weighted-from-scratch training on the orig/gen corridor subset (2048)."
+    },
+    {
+      "tag": "s18_m03method_origwin30_352",
+      "job_name": "s18m03",
+      "dataset": "training_dataset_small_origwin30_actual.npz",
+      "note": "Exact m03 weighted-from-scratch training on the true 30% orig-centered window subset (352)."
+    },
+    {
+      "tag": "s19_m03method_origwin35_861",
+      "job_name": "s19m03",
+      "dataset": "training_dataset_small_origwin35_actual.npz",
+      "note": "Exact m03 weighted-from-scratch training on the true 35% orig-centered window subset (861)."
+    }
+  ],
+  "remote_exp_root": "/oceanstor/home/e1554355/MechineLearning_for_DNAwalker/train_transformer/experiments/legacy_mha_smallrange_m03method_20260517"
+}

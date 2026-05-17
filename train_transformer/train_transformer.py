@@ -30,7 +30,7 @@ if _THIS_DIR not in sys.path:
 
 from config_loader_transformer import load_configs
 from dataset import load_and_preprocess_data_3d
-from model_transformer import build_transformer
+from model_builder import build_transformer_model
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ def train(smoke_test: bool = False, parent_config_override=None, transformer_con
     print(f"\n--- 2. 初始化模型 ---")
     print(f"  运行设备: {device}")
 
-    model = build_transformer(parent_config, transformer_config).to(device)
+    model = build_transformer_model(parent_config, transformer_config).to(device)
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"  模型参数量: {n_params:,}")

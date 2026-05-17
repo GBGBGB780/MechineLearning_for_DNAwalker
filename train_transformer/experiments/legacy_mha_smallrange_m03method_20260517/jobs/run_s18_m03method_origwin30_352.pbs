@@ -1,0 +1,33 @@
+#!/bin/bash
+#PBS -N s18m03
+#PBS -l select=1:ncpus=8:mem=64gb:ngpus=1
+#PBS -l walltime=24:00:00
+#PBS -q ais_gpu
+#PBS -V
+#PBS -o /oceanstor/home/e1554355/MechineLearning_for_DNAwalker/train_transformer/experiments/legacy_mha_smallrange_m03method_20260517/logs/s18_m03method_origwin30_352.out
+#PBS -e /oceanstor/home/e1554355/MechineLearning_for_DNAwalker/train_transformer/experiments/legacy_mha_smallrange_m03method_20260517/logs/s18_m03method_origwin30_352.err
+
+set -eo pipefail
+source /etc/profile
+cd /oceanstor/home/e1554355/MechineLearning_for_DNAwalker
+
+module load python/3.12.7
+module load matlab
+module load cuda/12.4
+
+source /home/svu/e1554355/miniconda3/etc/profile.d/conda.sh
+conda activate dna_env
+
+mkdir -p /oceanstor/home/e1554355/MechineLearning_for_DNAwalker/train_transformer/experiments/legacy_mha_smallrange_m03method_20260517/logs /oceanstor/home/e1554355/MechineLearning_for_DNAwalker/train_transformer/experiments/legacy_mha_smallrange_m03method_20260517/outputs/s18_m03method_origwin30_352
+test -f /oceanstor/home/e1554355/MechineLearning_for_DNAwalker/train_transformer/experiments/legacy_mha_smallrange_20260516/datasets/training_dataset_small_origwin30_actual.npz
+
+python -u /oceanstor/home/e1554355/MechineLearning_for_DNAwalker/train_transformer/experiments/legacy_mha_smallrange_m03method_20260517/train_legacy_mha.py --config-base configfile.ini --transformer-config /oceanstor/home/e1554355/MechineLearning_for_DNAwalker/train_transformer/experiments/legacy_mha_smallrange_m03method_20260517/configs/config_transformer.s18_m03method_origwin30_352.ini --adaptive-weight
+
+python -u /oceanstor/home/e1554355/MechineLearning_for_DNAwalker/train_transformer/experiments/legacy_mha_smallrange_m03method_20260517/evaluate_legacy_mha_rmse.py \
+  --config-base configfile.ini \
+  --config-generalization configfile.generalization.ini \
+  --transformer-config /oceanstor/home/e1554355/MechineLearning_for_DNAwalker/train_transformer/experiments/legacy_mha_smallrange_m03method_20260517/configs/config_transformer.s18_m03method_origwin30_352.ini \
+  --model /oceanstor/home/e1554355/MechineLearning_for_DNAwalker/train_transformer/experiments/legacy_mha_smallrange_m03method_20260517/outputs/s18_m03method_origwin30_352/best_transformer_model.s18_m03method_origwin30_352.pth \
+  --scaler /oceanstor/home/e1554355/MechineLearning_for_DNAwalker/train_transformer/experiments/legacy_mha_smallrange_m03method_20260517/outputs/s18_m03method_origwin30_352/transformer_y_scaler.s18_m03method_origwin30_352.pkl \
+  --output-dir /oceanstor/home/e1554355/MechineLearning_for_DNAwalker/train_transformer/experiments/legacy_mha_smallrange_m03method_20260517/outputs/s18_m03method_origwin30_352 \
+  --tag s18_m03method_origwin30_352
