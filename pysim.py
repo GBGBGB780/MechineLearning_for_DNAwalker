@@ -15,6 +15,8 @@ pysim.py — Forward physics simulator for the light-controlled DNA Walker.
 """
 
 import math
+import threading
+
 import numpy as np
 
 # ---------------------------------------------------------------------------
@@ -225,7 +227,36 @@ def _is_vis(sec):
 _INVALID = None
 
 
-def run_simulation(params, fixed_params=None):
+# ---------------------------------------------------------------------------
+# Forward-Simulation 调用计数器 (Call_Counter)
+# 平台无关的正向模拟调用计数，仅依赖 Python 标准库 (threading)。
+# Platform-independent forward-simulation call counter; stdlib only.
+# ---------------------------------------------------------------------------
+_call_counter = 0
+_call_counter_lock = threading.Lock()
+
+
+def _increment_call_count():
+    """Increment the global Forward_Simulation counter by exactly 1 (thread-safe)."""
+    global _call_counter
+    with _call_counter_lock:
+        _call_counter += 1
+
+
+def get_call_count() -> int:
+    """Return the current Forward_Simulation invocation count (non-negative int)."""
+    with _call_counter_lock:
+        return _call_counter
+
+
+def reset_call_count() -> None:
+    """Reset the Forward_Simulation invocation count to 0."""
+    global _call_counter
+    with _call_counter_lock:
+        _call_counter = 0
+
+
+def _run_simulation_impl(params, fixed_params=None):
     """运行一次完整正向模拟。
 
     Args:
@@ -313,6 +344,20 @@ def run_simulation(params, fixed_params=None):
             return zeros, -1.0
 
     return signals, float(dt)
+
+
+def run_simulation(params, fixed_params=None):
+    """Public entry point: count exactly once per call, then delegate.
+
+    The increment is in a try/finally so the count rises by exactly 1 even if
+    the implementation raises (Requirement 1.8) and on both valid (dt_used >= 0)
+    and invalid (dt_used < 0) paths (Requirements 1.1, 1.2). The return value is
+    the unmodified result of the original implementation (Requirement 1.4).
+    """
+    try:
+        return _run_simulation_impl(params, fixed_params)
+    finally:
+        _increment_call_count()
 
 
 def _batch_states(M, p0, n):

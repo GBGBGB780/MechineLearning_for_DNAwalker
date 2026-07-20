@@ -35,11 +35,19 @@ from inference_cnn import NanorobotPredictor  # noqa: E402
 RESULTS_DIR = os.path.join(_THIS_DIR, 'results')
 
 
-def get_test_split(config):
+def get_test_split(config, test_seed=None):
     """复现 data_loader 的拆分，返回 (X_test_raw(N,3,T), Y_test_raw(N,7))。
 
     关键：train_test_split 的划分只由 random_state 决定，与数据数值无关，
     因此对原始 (未归一化) X 用同 seed 拆分，得到的样本与训练时 test 集一致。
+
+    test_seed: 显式控制留出测试集划分的随机种子。默认 None 时回退到
+    config.get_random_seed()，即与历史行为完全一致。多 seed 重训研究通过
+    传入固定的 test_seed，可使测试集划分与训练种子解耦、跨模型保持一致。
+    test_seed: explicit seed driving the held-out test split. When None (default)
+    it falls back to config.get_random_seed(), reproducing the historical behavior
+    exactly. Passing a fixed test_seed makes the split independent of the training
+    seed and identical across models.
     """
     npz = config.get_dataset_file()
     with np.load(npz) as d:
@@ -47,17 +55,19 @@ def get_test_split(config):
         Y = d['Y'].astype(np.float64)   # 物理参数
 
     test_ratio = config.get_test_split_ratio()
-    seed = config.get_random_seed()
-    _, X_test, _, Y_test = train_test_split(X, Y, test_size=test_ratio, random_state=seed)
+    if test_seed is None:
+        test_seed = config.get_random_seed()
+    _, X_test, _, Y_test = train_test_split(X, Y, test_size=test_ratio, random_state=test_seed)
     return X_test, Y_test
 
 
-def evaluate(config_override=None, model_path=None, max_samples=0, seed=0, tag='cnn'):
+def evaluate(config_override=None, model_path=None, max_samples=0, seed=0,
+             test_seed=None, tag='cnn'):
     predictor = NanorobotPredictor(
         config_override_file=config_override, model_path=model_path)
     config = predictor.config
 
-    X_test, Y_test = get_test_split(config)
+    X_test, Y_test = get_test_split(config, test_seed=test_seed)
     n_total = X_test.shape[0]
 
     # 可选抽样加速
@@ -147,11 +157,14 @@ def main():
     ap.add_argument('--model', default=None)
     ap.add_argument('--max-samples', type=int, default=0, help='抽样数 (0=全部)')
     ap.add_argument('--seed', type=int, default=0)
+    ap.add_argument('--test-seed', type=int, default=None,
+                    help='留出测试集划分随机种子 (默认使用配置 random_seed)')
     ap.add_argument('--tag', default='cnn')
     args = ap.parse_args()
     evaluate(
         config_override=os.path.abspath(args.config) if args.config else None,
-        model_path=args.model, max_samples=args.max_samples, seed=args.seed, tag=args.tag)
+        model_path=args.model, max_samples=args.max_samples, seed=args.seed,
+        test_seed=args.test_seed, tag=args.tag)
 
 
 if __name__ == "__main__":

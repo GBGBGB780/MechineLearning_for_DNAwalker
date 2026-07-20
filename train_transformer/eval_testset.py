@@ -35,10 +35,18 @@ from inference_transformer import TransformerPredictor  # noqa: E402
 RESULTS_DIR = os.path.join(_THIS_DIR, 'results')
 
 
-def get_test_split(parent_config):
+def get_test_split(parent_config, test_seed=None):
     """复现 dataset.py 的拆分，返回 (X_test_raw(N,3,T), Y_test_raw(N,7))。
 
     关键：先一次 train_test_split (train+val) vs test，与 dataset.py 顺序一致。
+
+    test_seed: 显式控制留出测试集划分的随机种子。默认 None 时回退到
+    parent_config.get_random_seed()，即与历史行为完全一致。多 seed 重训研究通过
+    传入固定的 test_seed，可使测试集划分与训练种子解耦、跨模型保持一致。
+    test_seed: explicit seed driving the held-out test split. When None (default)
+    it falls back to parent_config.get_random_seed(), reproducing the historical
+    behavior exactly. Passing a fixed test_seed makes the split independent of the
+    training seed and identical across models.
     """
     npz = parent_config.get_dataset_file()
     with np.load(npz) as d:
@@ -46,13 +54,14 @@ def get_test_split(parent_config):
         Y = d['Y'].astype(np.float64)
 
     test_ratio = parent_config.get_test_split_ratio()
-    seed = parent_config.get_random_seed()
-    _, X_test, _, Y_test = train_test_split(X, Y, test_size=test_ratio, random_state=seed)
+    if test_seed is None:
+        test_seed = parent_config.get_random_seed()
+    _, X_test, _, Y_test = train_test_split(X, Y, test_size=test_ratio, random_state=test_seed)
     return X_test, Y_test
 
 
 def evaluate(parent_override=None, transformer_override=None, model_path=None,
-             max_samples=0, seed=0, tag='transformer'):
+             max_samples=0, seed=0, test_seed=None, tag='transformer'):
     predictor = TransformerPredictor(
         model_path=model_path,
         parent_config_override_file=parent_override,
@@ -60,7 +69,7 @@ def evaluate(parent_override=None, transformer_override=None, model_path=None,
     )
     pc = predictor.parent_config
 
-    X_test, Y_test = get_test_split(pc)
+    X_test, Y_test = get_test_split(pc, test_seed=test_seed)
     n_total = X_test.shape[0]
 
     if max_samples and max_samples < n_total:
@@ -149,12 +158,15 @@ def main():
     ap.add_argument('--model', default=None)
     ap.add_argument('--max-samples', type=int, default=0, help='抽样数 (0=全部)')
     ap.add_argument('--seed', type=int, default=0)
+    ap.add_argument('--test-seed', type=int, default=None,
+                    help='留出测试集划分随机种子 (默认使用配置 random_seed)')
     ap.add_argument('--tag', default='transformer')
     args = ap.parse_args()
     evaluate(
         parent_override=os.path.abspath(args.config) if args.config else None,
         transformer_override=os.path.abspath(args.transformer_config) if args.transformer_config else None,
-        model_path=args.model, max_samples=args.max_samples, seed=args.seed, tag=args.tag)
+        model_path=args.model, max_samples=args.max_samples, seed=args.seed,
+        test_seed=args.test_seed, tag=args.tag)
 
 
 if __name__ == "__main__":

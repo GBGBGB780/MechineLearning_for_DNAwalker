@@ -16,3 +16,7 @@ openpyxl>=3.1.5
 
 # MATLAB v7.3 (.mat/HDF5) 转 NPZ
 h5py>=3.11.0
+
+# 测试 / validation suite tests
+pytest>=8.0.0
+hypothesis>=6.100.0
