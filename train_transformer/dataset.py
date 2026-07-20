@@ -143,12 +143,15 @@ def load_and_preprocess_data_3d(npz_filename, batch_size, parent_config, transfo
     print(f"训练集: {X_train.shape[0]}  验证集: {X_val.shape[0]}  测试集: {X_test.shape[0]}")
 
     # ---------- 转为 Tensor → DataLoader ----------
+    # pin_memory 仅在 CUDA 下有意义；MPS 不支持且会触发告警。
+    use_pin = torch.cuda.is_available()
+
     def make_loader(X, Y, shuffle=False):
         ds = TensorDataset(
             torch.tensor(X, dtype=torch.float32),
             torch.tensor(Y, dtype=torch.float32))
         return DataLoader(ds, batch_size=batch_size, shuffle=shuffle,
-                          num_workers=0, pin_memory=True)
+                          num_workers=0, pin_memory=use_pin)
 
     train_loader = make_loader(X_train, Y_train, shuffle=True)
     val_loader   = make_loader(X_val,   Y_val)

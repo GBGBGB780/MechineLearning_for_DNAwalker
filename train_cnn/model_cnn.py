@@ -11,6 +11,24 @@ model_cnn.py — 1D-CNN inverse model
 import torch
 import torch.nn as nn
 
+
+class _MPSCompatAdaptiveAvgPool1d(nn.Module):
+    """AdaptiveAvgPool1d 的 MPS 兼容封装。
+
+    PyTorch 截至 2.x 在 MPS 上不支持 input_size 不能整除 output_size 的
+    自适应池化（见 pytorch#96056）。这里只在输入张量位于 MPS 时把
+    本层挪到 CPU 计算，其他设备路径与原始算子完全等价。
+    """
+
+    def __init__(self, output_size: int):
+        super().__init__()
+        self.pool = nn.AdaptiveAvgPool1d(output_size)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.device.type == "mps":
+            return self.pool(x.cpu()).to(x.device)
+        return self.pool(x)
+
 # 上层目录路径设置 / Parent directory path setup
 import os
 import sys
@@ -88,7 +106,7 @@ class InverseCNN(nn.Module):
                       kernel_size=conv4['kernel_size'], stride=conv4['stride'], padding=conv4['padding']),
             nn.BatchNorm1d(conv4['out_channels']),
             nn.ReLU(),
-            nn.AdaptiveAvgPool1d(64),  # 保留均值信息，适合回归 / retains mean info, suits regression
+            _MPSCompatAdaptiveAvgPool1d(64),  # 保留均值信息，适合回归 / retains mean info, suits regression
         )
 
         # 回归预测层 / Regression head
@@ -120,5 +138,3 @@ class InverseCNN(nn.Module):
         x = self.features(x)
         x = self.regressor(x)
         return x
-
-

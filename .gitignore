@@ -1,25 +1,53 @@
-# Python
-__pycache__/
-*.pyc
-.ipynb_checkpoints/
-.pytest_cache/
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
 
-# Model outputs & Data (large binary files)
+# Python cache / env
+__pycache__/
+*.py[cod]
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+env/
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+*.out
+*.err
+nohup.out
+
+# MATLAB / HPC artifacts
+*.asv
+*.mex*
+slprj/
+
+# Generated data / model artifacts
 *.pth
 *.mat
 *.npz
 *.pkl
-
-# Training outputs
 results/
 train_cnn/results/
 train_transformer/results/
 train_transformer/experiments/
+train_cnn/matlab_input_params.txt
+train_transformer/matlab_input_params.txt
 
-# IDE
-.idea/
-.vscode/
-
-# OS
-.DS_Store
-Thumbs.db
+# Notebook exports / local analysis artifacts
+*.nbconvert.ipynb

@@ -79,7 +79,12 @@ def train(config_override=None):
         return
 
     # --- 2. 初始化模型 / Initialize model ---
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
     print(f"--- 2. 开始训练 / Start training ---")
     print(f"设备 / Device: {device}")
 

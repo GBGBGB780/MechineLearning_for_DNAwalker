@@ -104,7 +104,15 @@ def train(smoke_test: bool = False, parent_config_override=None, transformer_con
         return
 
     # ── 2. 初始化模型 ────────────────────────────────────────────────────────
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+    # non_blocking 异步拷贝仅在 CUDA + pinned memory 下安全；MPS 上会触发
+    # 拷贝竞争导致数据损坏 (loss=inf)，故仅 CUDA 启用。
+    nb = (device.type == "cuda")
     print(f"\n--- 2. 初始化模型 ---")
     print(f"  运行设备: {device}")
 
@@ -162,8 +170,8 @@ def train(smoke_test: bool = False, parent_config_override=None, transformer_con
         total_train_loss = 0.0
 
         for X_batch, Y_batch in train_loader:
-            X_batch = X_batch.to(device, non_blocking=True)
-            Y_batch = Y_batch.to(device, non_blocking=True)
+            X_batch = X_batch.to(device, non_blocking=nb)
+            Y_batch = Y_batch.to(device, non_blocking=nb)
 
             Y_pred = model(X_batch)
             loss   = criterion(Y_pred, Y_batch)
@@ -186,8 +194,8 @@ def train(smoke_test: bool = False, parent_config_override=None, transformer_con
 
         with torch.no_grad():
             for X_v, Y_v in val_loader:
-                X_v = X_v.to(device, non_blocking=True)
-                Y_v = Y_v.to(device, non_blocking=True)
+                X_v = X_v.to(device, non_blocking=nb)
+                Y_v = Y_v.to(device, non_blocking=nb)
 
                 Y_pred_v = model(X_v)
                 total_val_loss += criterion(Y_pred_v, Y_v).item()
@@ -260,8 +268,8 @@ def train(smoke_test: bool = False, parent_config_override=None, transformer_con
 
     with torch.no_grad():
         for X_t, Y_t in test_loader:
-            X_t = X_t.to(device, non_blocking=True)
-            Y_t = Y_t.to(device, non_blocking=True)
+            X_t = X_t.to(device, non_blocking=nb)
+            Y_t = Y_t.to(device, non_blocking=nb)
 
             Y_pred_t = model(X_t)
             total_test_loss   += criterion(Y_pred_t, Y_t).item()

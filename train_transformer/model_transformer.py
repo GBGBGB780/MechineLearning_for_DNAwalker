@@ -1,16 +1,9 @@
 # coding=utf-8
 """
-model_transformer.py — PatchTST + MHA Transformer 逆向模型定义
-model_transformer.py — PatchTST + MHA Transformer inverse model definition
+PatchTST-style Transformer model for the DNA Walker inverse problem.
 
-架构 / Architecture:
-    PatchEmbedding → LearnablePositionalEncoding
-    → TemporalTransformerBlock × n_layers (时间维度自注意力 / temporal self-attention)
-    → CrossChannelAttentionBlock × cross_channel_layers (跨通道注意力 / cross-channel attention)
-    → GlobalMeanPool → RegressionHead (Sigmoid)
-
-输入 / Input:  (B, 3, 7801) — 三通道荧光曲线 / 3-channel fluorescence curves
-输出 / Output: (B, 7)       — 归一化物理参数 / normalized physical parameters
+Input curves are split into temporal patches per fluorescence channel, processed
+with self-attention along time, then refined with cross-channel attention.
 """
 
 import torch
@@ -18,57 +11,54 @@ import torch.nn as nn
 
 
 class PatchEmbedding(nn.Module):
-    """
-    将每条通道的序列切分为固定大小的 Patch，并映射到 d_model 维度。
-    Splits each channel's sequence into fixed-size patches and projects to d_model.
-    """
+    """Split each channel into patches and project every patch to d_model."""
 
-    def __init__(self, patch_size: int, stride: int, d_model: int):
+    def __init__(self, patch_size, stride, d_model):
         super().__init__()
         self.patch_size = patch_size
         self.stride = stride
         self.d_model = d_model
-        self.proj = nn.Conv1d(1, d_model, kernel_size=patch_size, stride=stride)
+        self.proj = nn.Conv1d(
+            in_channels=1,
+            out_channels=d_model,
+            kernel_size=patch_size,
+            stride=stride,
+        )
         self.norm = nn.LayerNorm(d_model)
 
     @staticmethod
-    def num_patches(seq_len: int, patch_size: int, stride: int) -> int:
+    def num_patches(seq_len, patch_size, stride):
+        if seq_len < patch_size:
+            raise ValueError(
+                f"seq_len ({seq_len}) must be >= patch_size ({patch_size})"
+            )
         return (seq_len - patch_size) // stride + 1
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch_size, num_channels, seq_len = x.shape
-        x = x.reshape(batch_size * num_channels, 1, seq_len)
-        x = self.proj(x).permute(0, 2, 1)
+    def forward(self, x):
+        batch_size, channels, _ = x.shape
+        x = x.reshape(batch_size * channels, 1, -1)
+        x = self.proj(x).transpose(1, 2)
         x = self.norm(x)
-        num_patches = x.shape[1]
-        return x.reshape(batch_size, num_channels, num_patches, self.d_model)
+        return x.reshape(batch_size, channels, x.shape[1], self.d_model)
 
 
 class LearnablePositionalEncoding(nn.Module):
-    """
-    可学习位置编码：为每个 Patch 添加位置信息。
-    Learnable positional encoding: adds position information to each patch.
-    """
+    """Learned positional embedding for temporal patch tokens."""
 
-    def __init__(self, max_patches: int, d_model: int, dropout: float = 0.1):
+    def __init__(self, max_patches, d_model, dropout):
         super().__init__()
-        self.pe = nn.Embedding(max_patches, d_model)
+        self.pos_embedding = nn.Parameter(torch.zeros(1, 1, max_patches, d_model))
         self.dropout = nn.Dropout(dropout)
-        self.register_buffer("pos_ids", torch.arange(max_patches))
+        nn.init.trunc_normal_(self.pos_embedding, std=0.02)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        num_patches = x.shape[-2]
-        pe = self.pe(self.pos_ids[:num_patches])
-        return self.dropout(x + pe)
+    def forward(self, x):
+        return self.dropout(x + self.pos_embedding[:, :, : x.shape[2], :])
 
 
-class TemporalTransformerBlock(nn.Module):
-    """
-    时间维度 Transformer 块：在同一通道内做自注意力，捕捉曲线时序依赖。
-    Temporal Transformer block: self-attention within a single channel to capture temporal dependencies.
-    """
+class TransformerEncoderBlock(nn.Module):
+    """Pre-LN self-attention block for temporal patch mixing."""
 
-    def __init__(self, d_model: int, n_heads: int, d_ff: int, dropout: float):
+    def __init__(self, d_model, n_heads, d_ff, dropout):
         super().__init__()
         self.norm1 = nn.LayerNorm(d_model)
         self.attn = nn.MultiheadAttention(
@@ -86,24 +76,17 @@ class TemporalTransformerBlock(nn.Module):
             nn.Dropout(dropout),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x):
         residual = x
-        x = self.norm1(x)
-        x, _ = self.attn(x, x, x, need_weights=False)
-        x = x + residual
-
-        residual = x
-        x = self.ffn(self.norm2(x))
-        return x + residual
+        x_norm = self.norm1(x)
+        x = residual + self.attn(x_norm, x_norm, x_norm, need_weights=False)[0]
+        return x + self.ffn(self.norm2(x))
 
 
 class CrossChannelAttentionBlock(nn.Module):
-    """
-    跨通道注意力块：在同一时间位置上对不同通道（FAM, TYE, CY5）做注意力交互。
-    Cross-channel attention block: attention across channels (FAM, TYE, CY5) at the same temporal position.
-    """
+    """Apply attention across FAM/TYE/CY5 at each patch position."""
 
-    def __init__(self, d_model: int, n_heads: int, d_ff: int, dropout: float):
+    def __init__(self, d_model, n_heads, d_ff, dropout):
         super().__init__()
         self.norm1 = nn.LayerNorm(d_model)
         self.attn = nn.MultiheadAttention(
@@ -121,66 +104,61 @@ class CrossChannelAttentionBlock(nn.Module):
             nn.Dropout(dropout),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch_size, num_channels, num_patches, d_model = x.shape
-        x = x.permute(0, 2, 1, 3).reshape(batch_size * num_patches, num_channels, d_model)
-
+    def forward(self, x):
+        batch_size, channels, patches, d_model = x.shape
+        x = x.permute(0, 2, 1, 3).reshape(batch_size * patches, channels, d_model)
         residual = x
-        x = self.norm1(x)
-        x, _ = self.attn(x, x, x, need_weights=False)
-        x = x + residual
-
-        residual = x
-        x = self.ffn(self.norm2(x))
-        x = x + residual
-
-        return x.reshape(batch_size, num_patches, num_channels, d_model).permute(0, 2, 1, 3)
+        x_norm = self.norm1(x)
+        x = residual + self.attn(x_norm, x_norm, x_norm, need_weights=False)[0]
+        x = x + self.ffn(self.norm2(x))
+        return x.reshape(batch_size, patches, channels, d_model).permute(0, 2, 1, 3)
 
 
 class DNAWalkerTransformer(nn.Module):
-    """
-    DNA Walker Transformer 逆向模型：从 3 通道荧光曲线预测 7 个物理参数。
-    DNA Walker Transformer inverse model: predicts 7 physical parameters from 3-channel fluorescence curves.
-
-    架构 / Architecture:
-        PatchEmbedding → Positional Encoding
-        → Temporal Self-Attention × n_layers (单通道内时序建模)
-        → Cross-Channel Attention × cross_channel_layers (FAM/TYE/CY5 跨通道交互)
-        → Global Mean Pool → MLP Head (Sigmoid)
-    """
+    """PatchTST + cross-channel MHA regressor for seven physical parameters."""
 
     def __init__(
         self,
-        seq_len: int,
-        num_channels: int,
-        output_size: int,
-        patch_size: int,
-        stride: int,
-        d_model: int,
-        n_heads: int,
-        n_layers: int,
-        d_ff: int,
-        cross_channel_layers: int,
-        dropout: float,
-        dropout_head: float,
+        seq_len,
+        num_channels,
+        output_size,
+        patch_size,
+        stride,
+        d_model,
+        n_heads,
+        n_layers,
+        d_ff,
+        cross_channel_layers,
+        dropout,
+        dropout_head,
     ):
         super().__init__()
-        num_patches = PatchEmbedding.num_patches(seq_len, patch_size, stride)
-        self.num_patches = num_patches
+        self.num_patches = PatchEmbedding.num_patches(seq_len, patch_size, stride)
+        self.num_channels = num_channels
+        self.d_model = d_model
+
         self.patch_embed = PatchEmbedding(patch_size, stride, d_model)
-        self.pos_enc = LearnablePositionalEncoding(num_patches, d_model, dropout)
+        self.pos_enc = LearnablePositionalEncoding(self.num_patches, d_model, dropout)
         self.temporal_blocks = nn.ModuleList(
-            [TemporalTransformerBlock(d_model, n_heads, d_ff, dropout) for _ in range(n_layers)]
+            [
+                TransformerEncoderBlock(d_model, n_heads, d_ff, dropout)
+                for _ in range(n_layers)
+            ]
         )
         self.cross_channel_blocks = nn.ModuleList(
-            [CrossChannelAttentionBlock(d_model, n_heads, d_ff, dropout) for _ in range(cross_channel_layers)]
+            [
+                CrossChannelAttentionBlock(d_model, n_heads, d_ff, dropout)
+                for _ in range(cross_channel_layers)
+            ]
         )
+
+        head_hidden = max(d_model // 2, output_size)
         self.head = nn.Sequential(
             nn.LayerNorm(d_model),
-            nn.Linear(d_model, d_model // 2),
+            nn.Linear(d_model, head_hidden),
             nn.GELU(),
             nn.Dropout(dropout_head),
-            nn.Linear(d_model // 2, output_size),
+            nn.Linear(head_hidden, output_size),
             nn.Sigmoid(),
         )
         self._init_weights()
@@ -196,31 +174,25 @@ class DNAWalkerTransformer(nn.Module):
                 if module.bias is not None:
                     nn.init.zeros_(module.bias)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batch_size, num_channels, _ = x.shape
+    def forward(self, x):
+        batch_size = x.shape[0]
         x = self.patch_embed(x)
-        _, _, num_patches, d_model = x.shape
-        x = x.reshape(batch_size * num_channels, num_patches, d_model)
         x = self.pos_enc(x)
+
+        _, channels, patches, d_model = x.shape
+        x = x.reshape(batch_size * channels, patches, d_model)
         for block in self.temporal_blocks:
             x = block(x)
-        x = x.reshape(batch_size, num_channels, num_patches, d_model)
+        x = x.reshape(batch_size, channels, patches, d_model)
+
         for block in self.cross_channel_blocks:
             x = block(x)
-        x = x.mean(dim=2).mean(dim=1)
+
+        x = x.mean(dim=(1, 2))
         return self.head(x)
 
 
 def build_transformer_model(parent_config, transformer_config):
-    """
-    根据配置构建 Transformer 模型。/ Build a Transformer model from configs.
-
-    Args:
-        parent_config:      根目录 Config 对象 / root Config object
-        transformer_config: TransformerConfig 对象 / TransformerConfig object
-    Returns:
-        DNAWalkerTransformer 实例 / DNAWalkerTransformer instance
-    """
     return DNAWalkerTransformer(
         seq_len=parent_config.get_seq_length(),
         num_channels=parent_config.get_num_curves(),
@@ -235,3 +207,28 @@ def build_transformer_model(parent_config, transformer_config):
         dropout=transformer_config.get_dropout(),
         dropout_head=transformer_config.get_dropout_head(),
     )
+
+
+def build_transformer(parent_config, transformer_config):
+    return build_transformer_model(parent_config, transformer_config)
+
+
+if __name__ == "__main__":
+    model = DNAWalkerTransformer(
+        seq_len=7801,
+        num_channels=3,
+        output_size=7,
+        patch_size=100,
+        stride=100,
+        d_model=256,
+        n_heads=8,
+        n_layers=4,
+        d_ff=512,
+        cross_channel_layers=2,
+        dropout=0.15,
+        dropout_head=0.3,
+    )
+    x = torch.randn(2, 3, 7801)
+    y = model(x)
+    print(f"output: {tuple(y.shape)}")
+    print(f"patches: {model.num_patches}")

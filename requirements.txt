@@ -7,7 +7,7 @@ pandas>=3.0.1
 scipy>=1.17.1
 scikit-learn>=1.7.2
 
-# 数据可视化 (用于 .ipynb 或检查脚本)
+# 数据可视化 (verify.py / eval_dual.py 出对比图，及检查脚本)
 matplotlib>=3.7.1
 umap-learn>=0.5.9
 

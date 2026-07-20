@@ -50,20 +50,13 @@ def load_real_experimental_data(config, data_path):
 
     # 读取 Excel
     try:
-        data = pd.read_excel(data_path)
-        exp_time = data['Time'].values
-        exp_fam = data['FAM/FAM T (+)'].values
-        exp_tye = data['TYE/TYE T (-)'].values
-        exp_cy5 = data['CY5/CY5 T (m)'].values
+        from exp_data_io import load_experimental_curves
+        exp_time, exp_fam, exp_tye, exp_cy5 = load_experimental_curves(data_path)
     except Exception as e:
-        print(f"错误: 无法读取数据列。请确保 Excel 包含 'Time', 'FAM/FAM T (+)', 'TYE/TYE T (-)', 'CY5/CY5 T (m)' 列。")
-        print(f"错误信息: {e}")
+        print(f"错误: 无法读取实验数据列: {e}")
         return None
 
-    # 清理并插值
-    mask = ~np.isnan(exp_time) & ~np.isnan(exp_fam) & ~np.isnan(exp_tye) & ~np.isnan(exp_cy5)
-    exp_time, exp_fam, exp_tye, exp_cy5 = exp_time[mask], exp_fam[mask], exp_tye[mask], exp_cy5[mask]
-
+    # 清理并插值 (load_experimental_curves 已剔除 NaN 行)
     interp_fam_func = interp1d(exp_time, exp_fam, kind='linear', bounds_error=False, fill_value=(exp_fam[0], exp_fam[-1]))
     interp_tye_func = interp1d(exp_time, exp_tye, kind='linear', bounds_error=False, fill_value=(exp_tye[0], exp_tye[-1]))
     interp_cy5_func = interp1d(exp_time, exp_cy5, kind='linear', bounds_error=False, fill_value=(exp_cy5[0], exp_cy5[-1]))

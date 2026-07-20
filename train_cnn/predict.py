@@ -63,20 +63,13 @@ def load_real_experimental_data(config, data_path):
 
     # 读取 Excel / Read Excel
     try:
-        data = pd.read_excel(data_path)
-        exp_time = data['Time'].values
-        exp_fam = data['FAM/FAM T (+)'].values
-        exp_tye = data['TYE/TYE T (-)'].values
-        exp_cy5 = data['CY5/CY5 T (m)'].values
+        from exp_data_io import load_experimental_curves
+        exp_time, exp_fam, exp_tye, exp_cy5 = load_experimental_curves(data_path)
     except Exception as e:
         print(f"错误 / Error: {e}")
         return None
 
-    # 清理 NaN / Clean NaN
-    mask = ~np.isnan(exp_time) & ~np.isnan(exp_fam) & ~np.isnan(exp_tye) & ~np.isnan(exp_cy5)
-    exp_time, exp_fam, exp_tye, exp_cy5 = exp_time[mask], exp_fam[mask], exp_tye[mask], exp_cy5[mask]
-
-    # 线性插值 / Linear interpolation
+    # 线性插值 / Linear interpolation (load_experimental_curves 已剔除 NaN 行)
     funcs = [interp1d(exp_time, d, kind='linear', bounds_error=False, fill_value=(d[0], d[-1]))
              for d in [exp_fam, exp_tye, exp_cy5]]
     curves = [f(standard_time_axis) for f in funcs]

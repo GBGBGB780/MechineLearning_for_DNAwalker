@@ -68,7 +68,12 @@ class TransformerPredictor:
             self.y_scaler = pickle.load(f)
         print(f"  Loaded y_scaler: {self.y_scaler_path}")
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
         print(f"  Device: {self.device}")
 
         self.model = build_transformer_model(
