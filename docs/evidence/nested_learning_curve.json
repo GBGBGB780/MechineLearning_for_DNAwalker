@@ -1,0 +1,668 @@
+{
+  "schema_version": 1,
+  "experiment": "nested_activity_stratified_learning_curve",
+  "metric": "curve_rmse_mean",
+  "metric_units": "dimensionless_fluorescence_fraction_rmse",
+  "dataset_path": "artifacts/studies/nested_learning_curve_30k/dnawalker_training_30k_seed42.npz",
+  "dataset_sha256": "f19f0ae0c63a104ea23c96cc83ce5ce1e0d22fd22c5e1a498dfe6ff53418de06",
+  "split_manifest_path": "artifacts/studies/nested_learning_curve_30k/split_manifest.npz",
+  "split_manifest_sha256": "a8bd1b7ae578bf48efc5ffc69e4372a432be132963be0ae142f3bffe5c88acd0",
+  "split_seed": 42,
+  "model_seeds": [
+    42,
+    43,
+    44,
+    45,
+    46
+  ],
+  "protocol": {
+    "train_sizes": [
+      8000,
+      16000,
+      24000
+    ],
+    "validation_size": 3000,
+    "test_size": 3000,
+    "activity_stratified": true,
+    "nested_training_membership": true,
+    "fixed_validation_membership": true,
+    "fixed_test_membership": true,
+    "equivalence_margin": 0.001
+  },
+  "partitions": {
+    "master_activity_bin_counts": [
+      6000,
+      6000,
+      6000,
+      6000,
+      6000
+    ],
+    "validation_size": 3000,
+    "validation_activity_bin_counts": [
+      600,
+      600,
+      600,
+      600,
+      600
+    ],
+    "test_size": 3000,
+    "test_activity_bin_counts": [
+      600,
+      600,
+      600,
+      600,
+      600
+    ],
+    "training": {
+      "8000": {
+        "size": 8000,
+        "activity_bin_counts": [
+          1600,
+          1600,
+          1600,
+          1600,
+          1600
+        ]
+      },
+      "16000": {
+        "size": 16000,
+        "activity_bin_counts": [
+          3200,
+          3200,
+          3200,
+          3200,
+          3200
+        ]
+      },
+      "24000": {
+        "size": 24000,
+        "activity_bin_counts": [
+          4800,
+          4800,
+          4800,
+          4800,
+          4800
+        ]
+      }
+    }
+  },
+  "parameter_distribution_audit": {
+    "retained_sample_count": 30000,
+    "unique_parameter_rows": 30000,
+    "candidate_sampling": "latin_hypercube",
+    "retained_rows_are_filtered_and_activity_balanced": true,
+    "strict_lhs_stratification_preserved_after_filtering": false,
+    "strongest_absolute_pearson_correlation": {
+      "parameters": [
+        "E_b",
+        "E_b_azo_cis"
+      ],
+      "correlation": 0.43853089823876357
+    },
+    "marginals": [
+      {
+        "parameter": "E_b",
+        "normalized_min": 0.00012491810697209024,
+        "normalized_max": 0.9999863944318776,
+        "normalized_mean": 0.5447750883223205,
+        "normalized_std": 0.26926227165368327,
+        "histogram_bin_count": 20,
+        "histogram_counts": [
+          791,
+          1014,
+          1146,
+          1150,
+          1226,
+          1272,
+          1416,
+          1458,
+          1662,
+          1661,
+          1770,
+          1817,
+          1787,
+          1810,
+          1822,
+          1749,
+          1745,
+          1636,
+          1588,
+          1480
+        ],
+        "histogram_max_relative_deviation": 0.4726666666666667,
+        "occupied_lhs_strata": 19848,
+        "total_lhs_strata": 30000,
+        "uniform_ks_statistic": 0.08499408452660395,
+        "uniform_ks_pvalue": 5.419410730155217e-189
+      },
+      {
+        "parameter": "E_b_azo_trans",
+        "normalized_min": 7.211144033014705e-06,
+        "normalized_max": 0.9999958702860491,
+        "normalized_mean": 0.6171711941373053,
+        "normalized_std": 0.2839641711911754,
+        "histogram_bin_count": 20,
+        "histogram_counts": [
+          855,
+          859,
+          825,
+          888,
+          1044,
+          1078,
+          996,
+          1083,
+          1123,
+          1122,
+          1358,
+          1295,
+          1304,
+          1405,
+          2153,
+          2365,
+          2293,
+          2364,
+          2688,
+          2902
+        ],
+        "histogram_max_relative_deviation": 0.9346666666666666,
+        "occupied_lhs_strata": 19081,
+        "total_lhs_strata": 30000,
+        "uniform_ks_statistic": 0.19354710969810884,
+        "uniform_ks_pvalue": 0.0
+      },
+      {
+        "parameter": "E_b_azo_cis",
+        "normalized_min": 2.8966104750338676e-05,
+        "normalized_max": 0.999964665271671,
+        "normalized_mean": 0.45154032629045276,
+        "normalized_std": 0.2825328050163872,
+        "histogram_bin_count": 20,
+        "histogram_counts": [
+          1799,
+          1821,
+          1806,
+          1807,
+          1751,
+          1807,
+          1714,
+          1695,
+          1571,
+          1542,
+          1488,
+          1388,
+          1353,
+          1336,
+          1286,
+          1247,
+          1225,
+          1141,
+          1171,
+          1052
+        ],
+        "histogram_max_relative_deviation": 0.2986666666666667,
+        "occupied_lhs_strata": 19829,
+        "total_lhs_strata": 30000,
+        "uniform_ks_statistic": 0.07756015092946811,
+        "uniform_ks_pvalue": 2.077598527421774e-157
+      },
+      {
+        "parameter": "k_mig",
+        "normalized_min": 1.2330511503899873e-05,
+        "normalized_max": 0.999976989895151,
+        "normalized_mean": 0.5031612382989299,
+        "normalized_std": 0.28868502481976427,
+        "histogram_bin_count": 20,
+        "histogram_counts": [
+          1449,
+          1455,
+          1492,
+          1532,
+          1485,
+          1504,
+          1503,
+          1484,
+          1491,
+          1439,
+          1518,
+          1505,
+          1492,
+          1474,
+          1538,
+          1543,
+          1535,
+          1533,
+          1501,
+          1527
+        ],
+        "histogram_max_relative_deviation": 0.04066666666666666,
+        "occupied_lhs_strata": 19893,
+        "total_lhs_strata": 30000,
+        "uniform_ks_statistic": 0.006230861174841507,
+        "uniform_ks_pvalue": 0.19372049699481642
+      },
+      {
+        "parameter": "k0",
+        "normalized_min": 2.236805675321919e-05,
+        "normalized_max": 0.9999198267709715,
+        "normalized_mean": 0.2613727174087095,
+        "normalized_std": 0.2762845950629083,
+        "histogram_bin_count": 20,
+        "histogram_counts": [
+          8408,
+          4299,
+          2738,
+          1969,
+          1432,
+          1272,
+          1137,
+          920,
+          879,
+          784,
+          746,
+          714,
+          635,
+          630,
+          635,
+          615,
+          552,
+          569,
+          522,
+          544
+        ],
+        "histogram_max_relative_deviation": 4.605333333333333,
+        "occupied_lhs_strata": 15909,
+        "total_lhs_strata": 30000,
+        "uniform_ks_statistic": 0.38170226644195837,
+        "uniform_ks_pvalue": 0.0
+      },
+      {
+        "parameter": "drt_z",
+        "normalized_min": 3.985264739405002e-06,
+        "normalized_max": 0.9999936708248212,
+        "normalized_mean": 0.39429242408916587,
+        "normalized_std": 0.2802008161807494,
+        "histogram_bin_count": 20,
+        "histogram_counts": [
+          2635,
+          2506,
+          2281,
+          2210,
+          1997,
+          1868,
+          1764,
+          1575,
+          1488,
+          1402,
+          1318,
+          1261,
+          1146,
+          1073,
+          1010,
+          930,
+          978,
+          864,
+          838,
+          856
+        ],
+        "histogram_max_relative_deviation": 0.7566666666666667,
+        "occupied_lhs_strata": 19214,
+        "total_lhs_strata": 30000,
+        "uniform_ks_statistic": 0.1620775491758238,
+        "uniform_ks_pvalue": 0.0
+      },
+      {
+        "parameter": "drt_s",
+        "normalized_min": 6.84184077031093e-05,
+        "normalized_max": 0.9999550899874189,
+        "normalized_mean": 0.48309974141544304,
+        "normalized_std": 0.28687841924265844,
+        "histogram_bin_count": 20,
+        "histogram_counts": [
+          1594,
+          1596,
+          1567,
+          1669,
+          1601,
+          1616,
+          1525,
+          1522,
+          1575,
+          1492,
+          1531,
+          1512,
+          1481,
+          1460,
+          1354,
+          1407,
+          1399,
+          1410,
+          1361,
+          1328
+        ],
+        "histogram_max_relative_deviation": 0.11466666666666667,
+        "occupied_lhs_strata": 20083,
+        "total_lhs_strata": 30000,
+        "uniform_ks_statistic": 0.028071003989117216,
+        "uniform_ks_pvalue": 5.708221904710705e-21
+      }
+    ],
+    "split_representativeness": {
+      "validation": {
+        "size": 3000,
+        "max_normalized_mean_difference": 0.014332381612070233,
+        "max_mean_difference_parameter": "drt_s",
+        "max_two_sample_ks_statistic": 0.027799999999999936,
+        "max_ks_parameter": "drt_s"
+      },
+      "test": {
+        "size": 3000,
+        "max_normalized_mean_difference": 0.007086193765607374,
+        "max_mean_difference_parameter": "E_b_azo_trans",
+        "max_two_sample_ks_statistic": 0.02250000000000002,
+        "max_ks_parameter": "k0"
+      },
+      "train_8000": {
+        "size": 8000,
+        "max_normalized_mean_difference": 0.0056757712730193255,
+        "max_mean_difference_parameter": "E_b_azo_trans",
+        "max_two_sample_ks_statistic": 0.012058333333333338,
+        "max_ks_parameter": "E_b_azo_trans"
+      },
+      "train_16000": {
+        "size": 16000,
+        "max_normalized_mean_difference": 0.001969220413194972,
+        "max_mean_difference_parameter": "k0",
+        "max_two_sample_ks_statistic": 0.005474999999999952,
+        "max_ks_parameter": "drt_z"
+      },
+      "train_24000": {
+        "size": 24000,
+        "max_normalized_mean_difference": 0.0014824135094269053,
+        "max_mean_difference_parameter": "E_b_azo_trans",
+        "max_two_sample_ks_statistic": 0.003966666666666674,
+        "max_ks_parameter": "E_b_azo_trans"
+      }
+    },
+    "interpretation": "Activity-bin balance is exact, but LHS candidate sampling does not guarantee uniform retained parameter marginals after physical validity filtering and activity-quota selection."
+  },
+  "results_by_train_size": {
+    "8000": {
+      "train_size": 8000,
+      "models": {
+        "cnn": {
+          "per_seed": [
+            0.019565334129572443,
+            0.019417422347704532,
+            0.0195085093022725,
+            0.018645765014626985,
+            0.02052557306013135
+          ],
+          "mean": 0.01953252077086156,
+          "sample_std": 0.0006684664416756553,
+          "count_totals": {
+            "n_test_samples": 15000,
+            "n_valid": 14998,
+            "n_invalid": 2,
+            "n_extreme": 0
+          }
+        },
+        "transformer": {
+          "per_seed": [
+            0.02267909301213905,
+            0.01910619291452764,
+            0.02489040228981006,
+            0.028853173390243163,
+            0.02273377149692932
+          ],
+          "mean": 0.023652526620729846,
+          "sample_std": 0.0035721106201146756,
+          "count_totals": {
+            "n_test_samples": 15000,
+            "n_valid": 14978,
+            "n_invalid": 15,
+            "n_extreme": 7
+          }
+        }
+      },
+      "paired_comparison": {
+        "difference_definition": "transformer_minus_cnn",
+        "per_seed_differences": [
+          0.003113758882566608,
+          -0.00031122943317689333,
+          0.005381892987537561,
+          0.010207408375616178,
+          0.002208198436797971
+        ],
+        "mean_difference": 0.004120005849868285,
+        "sample_std": 0.003967121605656799,
+        "standard_error": 0.0017741507170513432,
+        "ci95": [
+          -0.0008058262243720721,
+          0.009045837924108641
+        ],
+        "paired_t_pvalue_two_sided": 0.0809374817199706,
+        "equivalence_margin": 0.001,
+        "decision": "inconclusive",
+        "transformer_lower_seed_count": 1,
+        "cnn_lower_seed_count": 4,
+        "tie_seed_count": 0
+      }
+    },
+    "16000": {
+      "train_size": 16000,
+      "models": {
+        "cnn": {
+          "per_seed": [
+            0.01784020839317942,
+            0.018614521303564318,
+            0.018412115632740852,
+            0.017895435022028422,
+            0.018919603383436324
+          ],
+          "mean": 0.018336376746989867,
+          "sample_std": 0.0004647221542928611,
+          "count_totals": {
+            "n_test_samples": 15000,
+            "n_valid": 14994,
+            "n_invalid": 0,
+            "n_extreme": 6
+          }
+        },
+        "transformer": {
+          "per_seed": [
+            0.021189524526719065,
+            0.017643286768680846,
+            0.02255043012177425,
+            0.02027607320712139,
+            0.019369948338885973
+          ],
+          "mean": 0.020205852592636304,
+          "sample_std": 0.0018530424119729285,
+          "count_totals": {
+            "n_test_samples": 15000,
+            "n_valid": 14986,
+            "n_invalid": 9,
+            "n_extreme": 5
+          }
+        }
+      },
+      "paired_comparison": {
+        "difference_definition": "transformer_minus_cnn",
+        "per_seed_differences": [
+          0.003349316133539646,
+          -0.0009712345348834722,
+          0.004138314489033398,
+          0.0023806381850929696,
+          0.0004503449554496483
+        ],
+        "mean_difference": 0.0018694758456464379,
+        "sample_std": 0.00210252294602386,
+        "standard_error": 0.0009402768463124943,
+        "ci95": [
+          -0.0007411512018287048,
+          0.004480102893121581
+        ],
+        "paired_t_pvalue_two_sided": 0.11769009944167075,
+        "equivalence_margin": 0.001,
+        "decision": "inconclusive",
+        "transformer_lower_seed_count": 1,
+        "cnn_lower_seed_count": 4,
+        "tie_seed_count": 0
+      }
+    },
+    "24000": {
+      "train_size": 24000,
+      "models": {
+        "cnn": {
+          "per_seed": [
+            0.01736904023332973,
+            0.01839068548222168,
+            0.01847522128860212,
+            0.018616247139225155,
+            0.017746811404514517
+          ],
+          "mean": 0.01811960110957864,
+          "sample_std": 0.0005359392504615002,
+          "count_totals": {
+            "n_test_samples": 15000,
+            "n_valid": 14989,
+            "n_invalid": 3,
+            "n_extreme": 8
+          }
+        },
+        "transformer": {
+          "per_seed": [
+            0.019840851966941044,
+            0.016659598661692386,
+            0.019488717803787615,
+            0.016710553597468064,
+            0.018191820751970237
+          ],
+          "mean": 0.01817830855637187,
+          "sample_std": 0.0014951747331627876,
+          "count_totals": {
+            "n_test_samples": 15000,
+            "n_valid": 14980,
+            "n_invalid": 11,
+            "n_extreme": 9
+          }
+        }
+      },
+      "paired_comparison": {
+        "difference_definition": "transformer_minus_cnn",
+        "per_seed_differences": [
+          0.002471811733611315,
+          -0.0017310868205292936,
+          0.001013496515185494,
+          -0.0019056935417570905,
+          0.00044500934745572013
+        ],
+        "mean_difference": 5.870744679322901e-05,
+        "sample_std": 0.0018672277837609077,
+        "standard_error": 0.0008350496507931335,
+        "ci95": [
+          -0.0022597620687484932,
+          0.0023771769623349513
+        ],
+        "paired_t_pvalue_two_sided": 0.9473261206919502,
+        "equivalence_margin": 0.001,
+        "decision": "inconclusive",
+        "transformer_lower_seed_count": 2,
+        "cnn_lower_seed_count": 3,
+        "tie_seed_count": 0
+      }
+    }
+  },
+  "reference_results": {
+    "legacy_single_checkpoint": {
+      "source": "docs/audit/heldout_<model>_cpu.json",
+      "models": {
+        "cnn": 0.02566817275072497,
+        "transformer": 0.02160182426340494
+      },
+      "transformer_minus_cnn": -0.004066348487320032,
+      "interpretation": "compatibility_diagnostic_only"
+    },
+    "current_10k_dataset_8k_train": {
+      "source": "docs/evidence/current_10k_manifest.json",
+      "models": {
+        "cnn": 0.02124864772861178,
+        "transformer": 0.0211866192226767
+      },
+      "transformer_minus_cnn": -6.202850593508072e-05,
+      "dataset_is_not_nested_with_30k_master": true
+    }
+  },
+  "evidence_recovery": {
+    "recovered_result_row_count": 10,
+    "checkpoint_hash_unavailable_row_count": 5,
+    "source_description": "append-only local session log; not distributed",
+    "source_sha256": [
+      "5c0a99bfab667b917be6e91e5cb32794550bf6e2cc64001b567dd5fdcf07e520"
+    ],
+    "records": [
+      {
+        "train_size": 8000,
+        "model": "cnn",
+        "seed": 42,
+        "checkpoint_sha256_status": "original_checkpoint_hash_recorded"
+      },
+      {
+        "train_size": 8000,
+        "model": "cnn",
+        "seed": 43,
+        "checkpoint_sha256_status": "original_checkpoint_hash_recorded"
+      },
+      {
+        "train_size": 8000,
+        "model": "cnn",
+        "seed": 44,
+        "checkpoint_sha256_status": "original_checkpoint_hash_recorded"
+      },
+      {
+        "train_size": 8000,
+        "model": "cnn",
+        "seed": 45,
+        "checkpoint_sha256_status": "original_checkpoint_hash_recorded"
+      },
+      {
+        "train_size": 8000,
+        "model": "cnn",
+        "seed": 46,
+        "checkpoint_sha256_status": "original_checkpoint_hash_recorded"
+      },
+      {
+        "train_size": 8000,
+        "model": "transformer",
+        "seed": 42,
+        "checkpoint_sha256_status": "sentinel_not_original_checkpoint_hash"
+      },
+      {
+        "train_size": 8000,
+        "model": "transformer",
+        "seed": 43,
+        "checkpoint_sha256_status": "sentinel_not_original_checkpoint_hash"
+      },
+      {
+        "train_size": 8000,
+        "model": "transformer",
+        "seed": 44,
+        "checkpoint_sha256_status": "sentinel_not_original_checkpoint_hash"
+      },
+      {
+        "train_size": 8000,
+        "model": "transformer",
+        "seed": 45,
+        "checkpoint_sha256_status": "sentinel_not_original_checkpoint_hash"
+      },
+      {
+        "train_size": 8000,
+        "model": "transformer",
+        "seed": 46,
+        "checkpoint_sha256_status": "sentinel_not_original_checkpoint_hash"
+      }
+    ],
+    "interpretation": "Recovered rows preserve recorded metrics, counts, and provenance. A row without its original checkpoint SHA-256 cannot independently verify the checkpoint binary that produced that evaluation."
+  },
+  "private_source_json_sha256": "32f95cced73d1ff57d81a9d9e3247e0a007fe26210b947df956ec02166548975"
+}

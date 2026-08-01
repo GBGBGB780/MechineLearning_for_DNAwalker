@@ -2,10 +2,11 @@
 """Tests for the deterministic held-out test split used by the multi-seed study.
 
 Task 8.1 refactored ``get_test_split(config, test_seed=None)`` in both
-``train_cnn/eval_testset.py`` and ``train_transformer/eval_testset.py`` so the
-split is driven by ``train_test_split(..., random_state=test_seed)``. Those real
-functions load a large ``.npz`` dataset and instantiate heavyweight predictors,
-which is too expensive for a property test that runs >= 100 examples.
+``dnawalker.cnn.evaluate`` and
+``dnawalker.transformer.evaluate`` so the split is driven by
+``train_test_split(..., random_state=test_seed)``. Those real functions load a
+large ``.npz`` dataset and instantiate heavyweight predictors, which is too
+expensive for a property test that runs >= 100 examples.
 
 So we test the UNDERLYING determinism contract directly: the selection of
 held-out test indices made by ``sklearn.model_selection.train_test_split`` on an
@@ -20,11 +21,59 @@ smoke run.
 import math
 
 import numpy as np
+import pytest
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
 from sklearn.model_selection import train_test_split
 
-import multiseed_retrain
+from dnawalker.studies.multiseed import runner as multiseed_retrain
+from dnawalker.studies import protocol as validation_common
+
+
+def _provenance(model, seed, split_seed):
+    """Return a complete synthetic artifact binding for schema tests."""
+    return {
+        "param_names": [
+            "E_b",
+            "E_b_azo_trans",
+            "E_b_azo_cis",
+            "k_mig",
+            "k0",
+            "drt_z",
+            "drt_s",
+        ],
+        "split_seed": split_seed,
+        "checkpoint_model_seed": seed,
+        "checkpoint_split_seed": split_seed,
+        "checkpoint_dataset_sha256": "1" * 64,
+        "checkpoint_y_scaler_sha256": "3" * 64,
+        "checkpoint_epoch": 1,
+        "checkpoint_val_mse": 0.01,
+        "checkpoint_param_names_present": True,
+        "device": "cpu",
+        "dataset_path": "artifacts/datasets/training_dataset.npz",
+        "dataset_sha256": "1" * 64,
+        "checkpoint_path": f"artifacts/models/{model}/model.seed{seed}.pth",
+        "checkpoint_sha256": "2" * 64,
+        "y_scaler_path": f"artifacts/models/{model}/y_scaler.seed{seed}.pkl",
+        "y_scaler_sha256": "3" * 64,
+    }
+
+
+def _detailed_eval(metric, *, n_test=10, n_valid=None, n_invalid=0,
+                   n_extreme=0, error=None, provenance=None):
+    """Build the detailed evaluator result expected by orchestration."""
+    if n_valid is None:
+        n_valid = n_test - n_invalid - n_extreme
+    return multiseed_retrain.EvalOutcome(
+        curve_rmse_mean=metric,
+        n_test_samples=n_test,
+        n_valid=n_valid,
+        n_invalid=n_invalid,
+        n_extreme=n_extreme,
+        error=error,
+        provenance=provenance,
+    )
 
 
 def select_test_indices(values, test_ratio, test_seed):
@@ -122,6 +171,150 @@ def test_different_test_seed_generally_changes_selection():
     }
     # If the split ignored the seed there would be exactly one distinct set.
     assert len(selections) > 1
+
+
+def test_eval_one_validates_artifact_provenance_before_loading_split(
+        monkeypatch):
+    events = []
+
+    class Predictor:
+        config = object()
+        checkpoint_model_seed = 42
+        checkpoint_split_seed = 42
+        checkpoint_dataset_sha256 = "1" * 64
+        checkpoint_y_scaler_sha256 = "2" * 64
+        checkpoint_epoch = 1
+        checkpoint_val_mse = 0.1
+        checkpoint_param_names_present = True
+
+    class EvalModule:
+        @staticmethod
+        def get_test_split(*_args, **_kwargs):
+            events.append("split")
+            return np.empty((0, 3, 4)), np.empty((0, 7))
+
+    def reject_provenance(_predictor, _config):
+        events.append("provenance")
+        raise ValueError("dataset SHA-256 mismatch")
+
+    monkeypatch.setattr(
+        multiseed_retrain,
+        "write_seed_override_ini",
+        lambda *_args, **_kwargs: "override.ini",
+    )
+    monkeypatch.setattr(
+        multiseed_retrain,
+        "make_predictor",
+        lambda *_args, **_kwargs: Predictor(),
+    )
+    monkeypatch.setattr(
+        multiseed_retrain,
+        "_load_eval_module",
+        lambda _base: EvalModule(),
+    )
+    monkeypatch.setattr(
+        multiseed_retrain,
+        "_validate_evaluation_provenance",
+        reject_provenance,
+    )
+
+    assert multiseed_retrain.eval_one(
+        "cnn", 42, "model.pth", 42
+    ) is None
+    assert events == ["provenance"]
+
+
+def test_multiseed_rejects_partial_checkpoint_provenance():
+    class Predictor:
+        checkpoint_model_seed = 42
+        checkpoint_split_seed = 42
+        checkpoint_dataset_sha256 = None
+        checkpoint_y_scaler_sha256 = "2" * 64
+        checkpoint_epoch = 1
+        checkpoint_val_mse = 0.1
+        checkpoint_param_names_present = True
+
+    with pytest.raises(
+        ValueError, match="current provenance.*dataset_sha256"
+    ):
+        multiseed_retrain._require_current_checkpoint_provenance(
+            Predictor(), seed=42, test_seed=42
+        )
+
+
+def test_eval_one_reports_valid_invalid_and_extreme_sample_counts(
+        monkeypatch):
+    class Predictor:
+        config = object()
+        checkpoint_model_seed = 42
+        checkpoint_split_seed = 42
+        checkpoint_dataset_sha256 = "1" * 64
+        checkpoint_y_scaler_sha256 = "2" * 64
+        checkpoint_epoch = 1
+        checkpoint_val_mse = 0.1
+        checkpoint_param_names_present = True
+
+        @staticmethod
+        def get_param_names():
+            return ["case"]
+
+        @staticmethod
+        def predict(curves):
+            return np.arange(curves.shape[0], dtype=float).reshape(-1, 1)
+
+    class EvalModule:
+        @staticmethod
+        def get_test_split(*_args, **_kwargs):
+            return np.zeros((4, 3, 4)), np.zeros((4, 1))
+
+    def simulate(params):
+        case = params["case"]
+        if case == 0:
+            return np.zeros((3, 4)), 1.0
+        if case == 1:
+            return np.zeros((3, 4)), float("nan")
+        if case == 2:
+            return np.full((3, 4), 6.0), 1.0
+        raise RuntimeError("simulation failed")
+
+    monkeypatch.setattr(
+        multiseed_retrain,
+        "write_seed_override_ini",
+        lambda *_args, **_kwargs: "override.ini",
+    )
+    monkeypatch.setattr(
+        multiseed_retrain,
+        "make_predictor",
+        lambda *_args, **_kwargs: Predictor(),
+    )
+    monkeypatch.setattr(
+        multiseed_retrain,
+        "_load_eval_module",
+        lambda _base: EvalModule(),
+    )
+    monkeypatch.setattr(
+        multiseed_retrain,
+        "_validate_evaluation_provenance",
+        lambda *_args: _provenance("cnn", 42, 42),
+    )
+    monkeypatch.setattr(
+        multiseed_retrain,
+        "vector_to_param_dict",
+        lambda values, _names: {"case": int(values[0])},
+    )
+    monkeypatch.setattr("dnawalker.physics.simulator.run_simulation", simulate)
+
+    outcome = multiseed_retrain.eval_one(
+        "cnn", 42, "model.pth", 42, return_outcome=True
+    )
+
+    assert outcome.ok is True
+    assert outcome.curve_rmse_mean == 0.0
+    assert outcome.n_test_samples == 4
+    assert outcome.n_valid == 1
+    assert outcome.n_invalid == 2
+    assert outcome.n_extreme == 1
+    assert outcome.provenance == _provenance("cnn", 42, 42)
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +438,109 @@ def test_aggregate_failed_seeds_excluded_from_mean_and_std():
     assert result["insufficient_seeds"] is False
 
 
+@pytest.mark.parametrize(
+    "value",
+    [float("nan"), float("inf"), float("-inf"), None, True, "0.1"],
+)
+def test_aggregate_rejects_invalid_success_metrics(value):
+    """An ``ok=True`` seed must never inject a non-finite/non-numeric metric."""
+    with pytest.raises(ValueError, match="successful metric"):
+        multiseed_retrain.aggregate([(value, True)])
+
+
+@pytest.mark.parametrize("metric", [float("nan"), float("inf"), True, "0.1"])
+def test_run_one_model_marks_invalid_evaluation_metric_failed(
+        monkeypatch, metric):
+    monkeypatch.setattr(
+        multiseed_retrain,
+        "train_one",
+        lambda model, seed, split_seed=None: multiseed_retrain.TrainOutcome(
+            seed=seed,
+            model_path=f"/fake/{model}.{seed}.pth",
+            ok=True,
+            error=None,
+        ),
+    )
+    monkeypatch.setattr(
+        multiseed_retrain,
+        "eval_one",
+        lambda model, seed, model_path, test_seed, **_kwargs: metric,
+    )
+
+    report = multiseed_retrain._run_one_model(
+        "cnn", seeds=[42], test_seed=42, skip_train=False
+    )
+
+    assert report["n_success"] == 0
+    assert report["mean"] is None
+    assert report["per_seed"][0]["ok"] is False
+    assert report["per_seed"][0]["curve_rmse_mean"] is None
+    assert "required EvalOutcome" in report["per_seed"][0]["error"]
+
+
+def test_run_one_model_captures_unexpected_evaluator_exception(monkeypatch):
+    monkeypatch.setattr(
+        multiseed_retrain,
+        "train_one",
+        lambda model, seed, split_seed=None: multiseed_retrain.TrainOutcome(
+            seed=seed,
+            model_path=f"/fake/{model}.{seed}.pth",
+            ok=True,
+            error=None,
+        ),
+    )
+
+    def fail_evaluation(*_args, **_kwargs):
+        raise RuntimeError("unexpected evaluator failure")
+
+    monkeypatch.setattr(
+        multiseed_retrain, "eval_one", fail_evaluation
+    )
+
+    report = multiseed_retrain._run_one_model(
+        "cnn", seeds=[42], test_seed=42, skip_train=False
+    )
+
+    row = report["per_seed"][0]
+    assert row["ok"] is False
+    assert row["n_test_samples"] == 0
+    assert "RuntimeError: unexpected evaluator failure" == row["error"]
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"seeds": []},
+        {"seeds": [42, 42]},
+        {"seeds": [-1]},
+        {"test_seed": -1},
+        {"models": []},
+        {"models": ["cnn", "CNN"]},
+        {"skip_train": "yes"},
+    ],
+)
+def test_run_multiseed_rejects_invalid_experiment_identity_before_training(
+        monkeypatch, tmp_path, kwargs):
+    monkeypatch.setattr(
+        multiseed_retrain,
+        "_run_one_model",
+        lambda *_args, **_kwargs: pytest.fail(
+            "training orchestration ran before input validation"
+        ),
+    )
+    options = {
+        "seeds": [42],
+        "test_seed": 42,
+        "models": ["cnn"],
+        "results_dir": str(tmp_path),
+        "skip_train": False,
+    }
+    options.update(kwargs)
+
+    with pytest.raises((ValueError, validation_common.MissingSeedError)):
+        multiseed_retrain.run_multiseed(**options)
+
+
 # ===========================================================================
 # Task 8.7 — example tests: per-seed reporting (4.5) and JSON schema (4.6)
 # ===========================================================================
@@ -278,7 +574,7 @@ _TRANSFORMER_EVAL_FAIL_SEED = 3
 _TRANSFORMER_RMSE_8_7 = {1: 0.021}
 
 
-def _fake_train_one(model, seed):
+def _fake_train_one(model, seed, split_seed=None):
     """Fake trainer: no subprocess/torch. CNN always succeeds; Transformer has a
     training failure on ``_TRANSFORMER_TRAIN_FAIL_SEED``."""
     base = str(model).strip().lower()
@@ -293,16 +589,29 @@ def _fake_train_one(model, seed):
         seed=seed, model_path=f"/fake/transformer_seed{seed}.pth", ok=True, error=None)
 
 
-def _fake_eval_one(model, seed, model_path, test_seed):
+def _fake_eval_one(model, seed, model_path, test_seed, **_kwargs):
     """Fake evaluator: no torch/pysim. Returns a controlled curve_rmse_mean, or
     None to simulate an evaluation failure (Transformer seed 3)."""
     base = str(model).strip().lower()
+    provenance = _provenance(base, seed, test_seed)
     if base == "cnn":
-        return _CNN_RMSE_8_7[seed]
+        return _detailed_eval(
+            _CNN_RMSE_8_7[seed], provenance=provenance
+        )
     # transformer
     if seed == _TRANSFORMER_EVAL_FAIL_SEED:
-        return None  # evaluation produced no metric -> a failed seed
-    return _TRANSFORMER_RMSE_8_7.get(seed)
+        return _detailed_eval(
+            None,
+            n_test=10,
+            n_valid=0,
+            n_invalid=9,
+            n_extreme=1,
+            error="evaluation produced no valid test samples",
+            provenance=provenance,
+        )
+    return _detailed_eval(
+        _TRANSFORMER_RMSE_8_7.get(seed), provenance=provenance
+    )
 
 
 def _run_multiseed_with_fakes(monkeypatch, tmp_path):
@@ -339,7 +648,17 @@ def test_per_seed_values_reported_for_each_model(monkeypatch, tmp_path):
             assert [entry["seed"] for entry in per_seed] == list(_SEEDS_8_7)
             # Every entry carries the per-seed fields (Requirement 4.5).
             for entry in per_seed:
-                assert set(entry) >= {"seed", "ok", "curve_rmse_mean", "error"}
+                assert set(entry) >= {
+                    "seed",
+                    "ok",
+                    "curve_rmse_mean",
+                    "error",
+                    "n_test_samples",
+                    "n_valid",
+                    "n_invalid",
+                    "n_extreme",
+                    "provenance",
+                }
 
         # CNN: all seeds succeed with DISTINCT curve_rmse_mean values.
         cnn_seeds = models["cnn"]["per_seed"]
@@ -357,9 +676,17 @@ def test_per_seed_values_reported_for_each_model(monkeypatch, tmp_path):
         assert tf_seeds[_TRANSFORMER_TRAIN_FAIL_SEED]["ok"] is False
         assert tf_seeds[_TRANSFORMER_TRAIN_FAIL_SEED]["curve_rmse_mean"] is None
         assert tf_seeds[_TRANSFORMER_TRAIN_FAIL_SEED]["error"]
-        # Evaluation failure: recorded ok=False, no metric.
+        assert tf_seeds[_TRANSFORMER_TRAIN_FAIL_SEED]["n_test_samples"] is None
+        assert tf_seeds[_TRANSFORMER_TRAIN_FAIL_SEED]["provenance"] is None
+        # Evaluation failure: recorded ok=False, no metric, but retains the
+        # validated artifact binding because evaluation did start.
         assert tf_seeds[_TRANSFORMER_EVAL_FAIL_SEED]["ok"] is False
         assert tf_seeds[_TRANSFORMER_EVAL_FAIL_SEED]["curve_rmse_mean"] is None
+        assert tf_seeds[_TRANSFORMER_EVAL_FAIL_SEED]["n_test_samples"] == 10
+        assert tf_seeds[_TRANSFORMER_EVAL_FAIL_SEED]["n_valid"] == 0
+        assert tf_seeds[_TRANSFORMER_EVAL_FAIL_SEED]["provenance"] == _provenance(
+            "transformer", _TRANSFORMER_EVAL_FAIL_SEED, 42
+        )
 
 
 def test_multiseed_metrics_json_schema(monkeypatch, tmp_path):
@@ -462,14 +789,14 @@ def test_run_multiseed_wires_both_models_across_five_seeds(monkeypatch, tmp_path
     )
 
     # ----- record every train_one / eval_one invocation made by the wiring -----
-    train_calls = []   # list of (model, seed)
+    train_calls = []   # list of (model, seed, split_seed)
     eval_calls = []    # list of (model, seed, test_seed)
 
-    def fake_train_one(model, seed):
+    def fake_train_one(model, seed, split_seed=None):
         """Fake trainer: records (model, seed); returns a SUCCESSFUL outcome with
         a FAKE model_path (no torch/subprocess, no checkpoint written)."""
         base = str(model).strip().lower()
-        train_calls.append((base, seed))
+        train_calls.append((base, seed, split_seed))
         return multiseed_retrain.TrainOutcome(
             seed=seed,
             model_path=f"/fake/{base}_seed{seed}.pth",
@@ -477,13 +804,16 @@ def test_run_multiseed_wires_both_models_across_five_seeds(monkeypatch, tmp_path
             error=None,
         )
 
-    def fake_eval_one(model, seed, model_path, test_seed):
+    def fake_eval_one(model, seed, model_path, test_seed, **_kwargs):
         """Fake evaluator: records (model, seed, test_seed); returns a fake
         curve_rmse_mean (distinct per model+seed) so the seed succeeds."""
         base = str(model).strip().lower()
         eval_calls.append((base, seed, test_seed))
         # Distinct values so the per-seed report / aggregation has real spread.
-        return 0.01 * seed + (0.0 if base == "cnn" else 0.5)
+        return _detailed_eval(
+            0.01 * seed + (0.0 if base == "cnn" else 0.5),
+            provenance=_provenance(base, seed, test_seed),
+        )
 
     monkeypatch.setattr(multiseed_retrain, "train_one", fake_train_one)
     monkeypatch.setattr(multiseed_retrain, "eval_one", fake_eval_one)
@@ -500,11 +830,19 @@ def test_run_multiseed_wires_both_models_across_five_seeds(monkeypatch, tmp_path
 
     # ----- train_one invoked once per seed for BOTH models (5 each, 10 total) --
     assert len(train_calls) == 2 * len(_SEEDS_8_8) == 10
-    cnn_train_seeds = [seed for base, seed in train_calls if base == "cnn"]
-    tf_train_seeds = [seed for base, seed in train_calls if base == "transformer"]
+    cnn_train_seeds = [
+        seed for base, seed, _split_seed in train_calls if base == "cnn"
+    ]
+    tf_train_seeds = [
+        seed for base, seed, _split_seed in train_calls
+        if base == "transformer"
+    ]
     # Recorded seeds == the 5 configured seeds for EACH model (Requirements 4.1, 4.2).
     assert cnn_train_seeds == list(_SEEDS_8_8)
     assert tf_train_seeds == list(_SEEDS_8_8)
+    assert {split_seed for _base, _seed, split_seed in train_calls} == {
+        test_seed
+    }
 
     # ----- eval_one invoked once per seed for BOTH models (5 each, 10 total) ---
     assert len(eval_calls) == 2 * len(_SEEDS_8_8) == 10
@@ -557,6 +895,70 @@ def test_run_multiseed_wires_both_models_across_five_seeds(monkeypatch, tmp_path
             parser = _configparser.ConfigParser()
             parser.read(path)
             assert parser["TRAINING"]["random_seed"] == str(seed)
+            assert parser["TRAINING"]["split_seed"] == "42"
+
+
+def test_merge_results_rejects_incompatible_parts(tmp_path):
+    """Parallel result parts are invalid unless seeds and test split match."""
+    part_a = tmp_path / "a"
+    part_b = tmp_path / "b"
+    part_a.mkdir()
+    part_b.mkdir()
+    per_seed = [
+        {
+            "seed": seed,
+            "ok": True,
+            "curve_rmse_mean": value,
+            "error": None,
+            "n_test_samples": 10,
+            "n_valid": 10,
+            "n_invalid": 0,
+            "n_extreme": 0,
+            "provenance": _provenance("cnn", seed, 42),
+        }
+        for seed, value in [(42, 0.1), (43, 0.2)]
+    ]
+    report = {
+        "per_seed": per_seed,
+        "n_success": 2,
+        "mean": 0.15,
+        "std": float(np.std([0.1, 0.2], ddof=1)),
+        "std_available": True,
+        "insufficient_seeds": False,
+    }
+    base = {
+        "experiment": "multiseed_retraining",
+        "metric": "curve_rmse_mean",
+        "test_seed": 42,
+        "seeds": [42, 43],
+        "models": {"cnn": report},
+    }
+    (part_a / "multiseed_metrics.json").write_text(
+        _json.dumps(base), encoding="utf-8"
+    )
+    incompatible = dict(base)
+    incompatible["test_seed"] = 7
+    transformer_report = {
+        **report,
+        "per_seed": [
+            {
+                **entry,
+                "provenance": _provenance(
+                    "transformer", entry["seed"], 7
+                ),
+            }
+            for entry in per_seed
+        ],
+    }
+    incompatible["models"] = {"transformer": transformer_report}
+    (part_b / "multiseed_metrics.json").write_text(
+        _json.dumps(incompatible), encoding="utf-8"
+    )
+
+    with np.testing.assert_raises_regex(ValueError, "different seeds/test_seed"):
+        multiseed_retrain.merge_results(
+            [str(part_a), str(part_b)], results_dir=str(tmp_path / "merged")
+        )
 
 
 # ===========================================================================
@@ -600,6 +1002,10 @@ def _synthetic_models_report():
                 "ok": True,
                 "curve_rmse_mean": val,
                 "error": None,
+                "n_test_samples": 10,
+                "n_valid": 10,
+                "n_invalid": 0,
+                "n_extreme": 0,
             })
             successes.append(val)
         if failed_seed is not None:
@@ -608,6 +1014,10 @@ def _synthetic_models_report():
                 "ok": False,
                 "curve_rmse_mean": None,
                 "error": "evaluation produced no metric",
+                "n_test_samples": 10,
+                "n_valid": 0,
+                "n_invalid": 10,
+                "n_extreme": 0,
             })
         n_success = len(successes)
         mean = float(np.mean(successes)) if successes else None
@@ -631,15 +1041,18 @@ def _synthetic_models_report():
 def test_run_multiseed_writes_nonempty_comparison_figure(monkeypatch, tmp_path):
     """Requirements 4.7, 6.4: run_multiseed writes multiseed_compare.png as a
     non-empty image file in the Results_Directory (train_one/eval_one stubbed)."""
-    def fake_train_one(model, seed):
+    def fake_train_one(model, seed, split_seed=None):
         base = str(model).strip().lower()
         return multiseed_retrain.TrainOutcome(
             seed=seed, model_path=f"/fake/{base}_seed{seed}.pth", ok=True, error=None)
 
-    def fake_eval_one(model, seed, model_path, test_seed):
+    def fake_eval_one(model, seed, model_path, test_seed, **_kwargs):
         base = str(model).strip().lower()
         # Distinct per model+seed so the per-seed strip has real spread.
-        return 0.01 * seed + (0.0 if base == "cnn" else 0.5)
+        return _detailed_eval(
+            0.01 * seed + (0.0 if base == "cnn" else 0.5),
+            provenance=_provenance(base, seed, test_seed),
+        )
 
     monkeypatch.setattr(multiseed_retrain, "train_one", fake_train_one)
     monkeypatch.setattr(multiseed_retrain, "eval_one", fake_eval_one)

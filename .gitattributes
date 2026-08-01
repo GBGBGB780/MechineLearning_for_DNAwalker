@@ -1,0 +1,2 @@
+# Keep configuration files deterministic across macOS, Linux, and Windows.
+*.ini text eol=lf

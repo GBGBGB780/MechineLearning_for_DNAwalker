@@ -21,8 +21,8 @@ import numpy as np
 import pytest
 from hypothesis import given, settings, strategies as st
 
-import pysim
-import validation_common as vc
+from dnawalker.physics import pysim
+from dnawalker.studies import protocol as vc
 
 # Configured_Ranges for the seven trainable parameters, loaded once.
 _RANGES = vc.load_configured_ranges()

@@ -1,0 +1,42 @@
+{
+  "model": "Transformer",
+  "n_samples": 1000,
+  "n_invalid": 1,
+  "n_extreme": 1,
+  "n_valid": 998,
+  "curve_rmse_mean": 0.021601778389438078,
+  "curve_rmse_median": 0.011101629157355337,
+  "curve_rmse_std": 0.02944892735093278,
+  "curve_rmse_p90": 0.05530446031070603,
+  "fam_rmse_mean": 0.019877807277129744,
+  "tye_rmse_mean": 0.02827218527268755,
+  "cy5_rmse_mean": 0.016655342618496934,
+  "param_mse_scaled": 0.022916042486750582,
+  "provenance": {
+    "param_names": [
+      "e_b",
+      "e_b_azo_trans",
+      "e_b_azo_cis",
+      "k_mig",
+      "k0",
+      "drt_z",
+      "drt_s"
+    ],
+    "split_seed": 42,
+    "checkpoint_model_seed": null,
+    "checkpoint_split_seed": null,
+    "checkpoint_dataset_sha256": null,
+    "checkpoint_y_scaler_sha256": null,
+    "checkpoint_epoch": 264,
+    "checkpoint_val_mse": 0.021570274606347084,
+    "checkpoint_param_names_present": true,
+    "device": "mps",
+    "inference_batch_size": 64,
+    "dataset_path": "results/training_dataset.npz",
+    "dataset_sha256": "ada67b3f24d01051c39238b5d18cbe82b8c1edd612466f19c958763b3e83602c",
+    "checkpoint_path": "train_transformer/results/best_transformer_model.pth",
+    "checkpoint_sha256": "d3e698103227cb7752eab3ca81f4ef3b3b2f2a470a662305cc1b00bebdf520a2",
+    "y_scaler_path": "train_transformer/results/transformer_y_scaler.pkl",
+    "y_scaler_sha256": "63eb894c008146757f2be866a6902e74de76ea98694da38f39938dd17e3762ba"
+  }
+}

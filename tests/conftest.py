@@ -1,8 +1,9 @@
 # coding=utf-8
-"""Pytest configuration for the validation-experiments test suite.
+"""Pytest configuration for the canonical ``dnawalker`` test suite.
 
-Ensures the repository root is importable so tests can ``import pysim`` and
-``import validation_common`` regardless of the directory pytest is invoked from.
+Ensures the repository root is importable when tests are invoked by absolute
+path from outside the checkout, without relying on removed compatibility
+modules.
 """
 
 import os

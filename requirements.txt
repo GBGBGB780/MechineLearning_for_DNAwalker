@@ -1,22 +1,33 @@
-# 核心深度学习框架
+# Core deep-learning framework
 torch>=2.5.1
 
-# 科学计算与数据处理
-numpy>=2.0.2      # 需要 2.x：y_scaler.pkl 用 numpy 2.x 格式保存，1.x 无法加载
-pandas>=3.0.1
+# Scientific computing and data processing
+# NumPy 2.x is required because reviewed scaler files use its serialization.
+numpy>=2.0.2
+# The project uses stable dataframe/Excel APIs; cap the next breaking major.
+pandas>=2.1,<4
 scipy>=1.17.1
 scikit-learn>=1.7.2
 
-# 数据可视化 (verify.py / eval_dual.py 出对比图，及检查脚本)
+# Plotting for verification, evaluation, and evidence scripts
 matplotlib>=3.7.1
-umap-learn>=0.5.9
 
-# pandas 依赖 (用于读写 Excel .xlsx 文件)
+# Excel workbook support for pandas
 openpyxl>=3.1.5
 
-# MATLAB v7.3 (.mat/HDF5) 转 NPZ
+# MATLAB v7.3 (HDF5) to NPZ conversion
 h5py>=3.11.0
 
-# 测试 / validation suite tests
-pytest>=8.0.0
-hypothesis>=6.100.0
+# Dev/test dependencies for the validation-experiments suite.
+pytest>=9.0.3
+hypothesis>=6.155.1
+pyflakes>=3.4.0
+
+# Reproducible installation:
+#   uv pip install --torch-backend cpu -r requirements-lock.txt
+# ``constraints-tested-py312.txt`` records the exact environment used for the
+# 2026-06-26 local audit; the generated CPU lock is portable across OSes.
+
+# Optional: only used by notebook dimensionality-reduction visualization.
+# It is not a core dependency because it pulls in numba/llvmlite.
+#   umap-learn>=0.5.9

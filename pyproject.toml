@@ -1,0 +1,28 @@
+[build-system]
+requires = [
+    "setuptools==81.0.0",
+    "wheel==0.46.3",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dnawalker"
+version = "0.1.0"
+description = "DNA Walker simulation, inverse models, and validation experiments"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { file = "LICENSE" }
+
+[project.scripts]
+dnawalker = "dnawalker.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["dnawalker*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: noticeably slow integration tests; use -m 'not slow' to skip",
+]

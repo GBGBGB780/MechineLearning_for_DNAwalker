@@ -1,0 +1,57 @@
+name: tests
+
+# Runs the pytest suite on push/PR so regressions in the physics kernel or the
+# shared helpers cannot reach main unnoticed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Keep CI aligned with the reviewed Python 3.12 lock workflow.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Create venv & install deps
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --torch-backend cpu -r requirements-lock.txt \
+            --python .venv/bin/python
+
+      # The runner is CPU-only; heavy training paths are stubbed in unit tests.
+      - name: Run tests
+        run: .venv/bin/python -m pytest
+
+      - name: Run static checks
+        run: |
+          find . -path './.git' -prune -o -path './.venv' -prune \
+            -o -path './archive' -prune \
+            -o -type f -name '*.py' -print0 \
+            | xargs -0 .venv/bin/python -m pyflakes
+          .venv/bin/python -m compileall -q . -x '/\.git/|/\.venv/|/archive/'
+          .venv/bin/python -m pip check
+          git diff --check
+          bash -n scripts/run_application.sh scripts/run_smoke_test.sh \
+            scripts/hpc/cnn.pbs.sh scripts/hpc/transformer.pbs.sh
+          .venv/bin/python -m json.tool docs/notebooks/DNAwalker_project.ipynb >/dev/null
+          find docs/audit -type f -name '*.json' \
+            -exec .venv/bin/python -m json.tool {} \; >/dev/null
+          find docs/evidence -type f -name '*.json' \
+            -exec .venv/bin/python -m json.tool {} \; >/dev/null
+          (cd docs/evidence && sha256sum -c SHA256SUMS)
+          (cd artifacts/application && sha256sum -c SHA256SUMS)
+          if grep -R -E --include='*.json' \
+              '/Users/|/private/tmp|\.codex/sessions|A[0-9]{7}[A-Z]' \
+              docs/evidence; then
+            exit 1
+          fi

@@ -7,10 +7,11 @@ and JSON writer) are added by later tasks (2.4, 2.6, 2.7, 2.8, 2.10).
 """
 
 import numpy as np
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-import validation_common
+from dnawalker.studies import protocol as validation_common
 
 
 # Feature: validation-experiments, Property 19: The seed guard refuses stochastic steps without a seed
@@ -24,8 +25,8 @@ import validation_common
 #       stochastic work is performed. The guard is a pure validation function:
 #       it does no stochastic work itself, so a raised error necessarily precedes
 #       any downstream stochastic step that would consume the seed.
-#   (b) For any int seed (including negative and zero), ``require_seed`` returns
-#       that seed unchanged.
+#   (b) For any non-negative int seed, ``require_seed`` returns that seed
+#       unchanged. Negative seeds are rejected before NumPy sees them.
 
 
 # Non-int values that must be rejected. Booleans are listed explicitly because
@@ -57,14 +58,49 @@ def test_require_seed_rejects_non_int_arguments(arg):
 
 
 @settings(max_examples=100)
-@given(seed=st.integers())
+@given(seed=st.integers(min_value=0))
 def test_require_seed_returns_int_seed_unchanged(seed):
-    """Any int seed (negative, zero, positive) is returned unchanged."""
+    """Any non-negative int seed is returned unchanged."""
     result = validation_common.require_seed(seed, "step")
     assert result == seed
     assert type(result) is int
     # A genuine bool would have been rejected by the branch above; guard here too.
     assert not isinstance(result, bool)
+
+
+@pytest.mark.parametrize("seed", [-1, -(2 ** 63)])
+def test_require_seed_rejects_negative_integers(seed):
+    with pytest.raises(validation_common.MissingSeedError):
+        validation_common.require_seed(seed, "step")
+
+
+@pytest.mark.parametrize("value", [1.5, "2", True, None])
+def test_require_int_rejects_coercible_non_integers(value):
+    with pytest.raises(ValueError, match="integer"):
+        validation_common.require_int(value, "count", minimum=1)
+
+
+def test_require_int_accepts_numpy_integer_and_enforces_bounds():
+    assert validation_common.require_int(np.int64(3), "count", minimum=1) == 3
+    with pytest.raises(ValueError, match="<= 3"):
+        validation_common.require_int(4, "count", maximum=3)
+
+
+@pytest.mark.parametrize("value", [True, "0.1", np.nan, np.inf, 0.0, -1.0])
+def test_require_finite_real_rejects_invalid_positive_values(value):
+    with pytest.raises(ValueError):
+        validation_common.require_finite_real(
+            value, "value", minimum=0.0, strict_minimum=True
+        )
+
+
+@pytest.mark.parametrize(
+    ("base_seed", "batch_index"),
+    [(-1, 0), (0, -1), (1.5, 0), (0, True), (2 ** 32, 0)],
+)
+def test_derive_batch_seed_rejects_invalid_inputs(base_seed, batch_index):
+    with pytest.raises(ValueError):
+        validation_common.derive_batch_seed(base_seed, batch_index)
 
 
 # Feature: validation-experiments, Property 5: Latin Hypercube draws produce the requested count within Configured_Ranges
@@ -339,6 +375,20 @@ def test_distribution_stats_are_correctly_ordered(values):
     assert stats["std"] >= 0.0
 
 
+@pytest.mark.parametrize(
+    "values",
+    [[], [np.nan], [np.inf], [1.0, -np.inf], ["not-a-number"]],
+)
+def test_distribution_stats_rejects_empty_or_nonfinite_samples(values):
+    with pytest.raises(ValueError, match="sample|finite|numeric"):
+        validation_common.distribution_stats(values)
+
+
+def test_distribution_stats_rejects_overflowed_statistics():
+    with pytest.raises(ValueError, match="overflowed"):
+        validation_common.distribution_stats([1e308, -1e308])
+
+
 # ---------------------------------------------------------------------------
 # Task 2.10 — Example/unit tests for the predictor factory and JSON writer.
 #
@@ -347,19 +397,14 @@ def test_distribution_stats_are_correctly_ordered(values):
 # These are plain pytest example tests (NOT Hypothesis property tests). They
 # avoid loading torch / the heavy DL models by faking the lazily-imported
 # predictor modules. ``make_predictor`` imports its predictor classes lazily
-# *inside* the function via:
-#     from train_cnn.inference_cnn import NanorobotPredictor
-#     from train_transformer.inference_transformer import TransformerPredictor
-# so injecting fake modules into ``sys.modules`` before the call makes the
-# factory construct the fakes instead of the real (torch-dependent) classes.
+# *inside* the function from the canonical package paths. Injecting fake modules
+# into ``sys.modules`` before the call makes the factory construct the fakes
+# instead of the real (torch-dependent) classes.
 # ---------------------------------------------------------------------------
 
 import json
 import sys
 import types
-
-import pytest
-
 
 class _FakeCNNPredictor:
     """Stand-in for ``NanorobotPredictor`` exposing the predictor interface."""
@@ -391,44 +436,24 @@ class _FakeTransformerPredictor:
 
 
 def _install_fake_predictor_modules(monkeypatch):
-    """Inject fake DL modules so ``make_predictor`` never imports torch.
-
-    The factory adds the model directory to ``sys.path`` and imports the
-    top-level modules ``inference_cnn`` / ``inference_transformer`` lazily
-    (``train_cnn`` / ``train_transformer`` are not packages). Placing fake
-    modules under those top-level names in ``sys.modules`` short-circuits the
-    real imports so no torch-dependent code loads. The dotted package names are
-    also stubbed for defense-in-depth in case a caller imports them that way.
-    """
-    # Primary targets: the top-level module names make_predictor imports after
-    # inserting train_cnn/ and train_transformer/ onto sys.path.
-    top_cnn = types.ModuleType("inference_cnn")
-    top_cnn.NanorobotPredictor = _FakeCNNPredictor
-    top_tf = types.ModuleType("inference_transformer")
-    top_tf.TransformerPredictor = _FakeTransformerPredictor
-    monkeypatch.setitem(sys.modules, "inference_cnn", top_cnn)
-    monkeypatch.setitem(sys.modules, "inference_transformer", top_tf)
-
-    cnn_mod = types.ModuleType("train_cnn.inference_cnn")
+    """Inject fake legacy and canonical predictor modules without loading torch."""
+    cnn_mod = types.ModuleType("dnawalker.cnn.inference")
     cnn_mod.NanorobotPredictor = _FakeCNNPredictor
-
-    tf_mod = types.ModuleType("train_transformer.inference_transformer")
+    tf_mod = types.ModuleType("dnawalker.transformer.inference")
     tf_mod.TransformerPredictor = _FakeTransformerPredictor
 
-    # Stub parent packages too, so the dotted import never falls through to the
-    # real packages (which would import torch).
-    cnn_pkg = types.ModuleType("train_cnn")
-    cnn_pkg.__path__ = []  # mark as a package
-    cnn_pkg.inference_cnn = cnn_mod
-
-    tf_pkg = types.ModuleType("train_transformer")
-    tf_pkg.__path__ = []  # mark as a package
-    tf_pkg.inference_transformer = tf_mod
-
-    monkeypatch.setitem(sys.modules, "train_cnn", cnn_pkg)
+    # Canonical package paths used by validation_common.make_predictor.
+    monkeypatch.setitem(
+        sys.modules, "dnawalker.cnn.inference", cnn_mod
+    )
+    monkeypatch.setitem(
+        sys.modules, "dnawalker.transformer.inference", tf_mod
+    )
+    # Legacy paths remain injectable for downstream compatibility checks.
     monkeypatch.setitem(sys.modules, "train_cnn.inference_cnn", cnn_mod)
-    monkeypatch.setitem(sys.modules, "train_transformer", tf_pkg)
-    monkeypatch.setitem(sys.modules, "train_transformer.inference_transformer", tf_mod)
+    monkeypatch.setitem(
+        sys.modules, "train_transformer.inference_transformer", tf_mod
+    )
 
 
 def test_make_predictor_cnn_constructs_faked_class_with_interface(monkeypatch):
@@ -565,3 +590,34 @@ def test_write_json_produces_valid_indented_json(tmp_path):
     lines = raw.splitlines()
     assert len(lines) > 1
     assert any(line.startswith("  ") for line in lines)
+
+
+def test_write_json_replaces_non_finite_values_with_null(tmp_path):
+    """Metrics files must be strict JSON, not Python's NaN/Infinity dialect."""
+    out_path = tmp_path / "strict.json"
+    payload = {
+        "inf": float("inf"),
+        "negative_inf": np.float64("-inf"),
+        "nan": float("nan"),
+        "nested": [1.0, np.array([2.0, np.nan])],
+    }
+
+    validation_common.write_json(str(out_path), payload)
+
+    raw = out_path.read_text(encoding="utf-8")
+    assert "Infinity" not in raw
+    assert "NaN" not in raw
+    assert json.loads(raw) == {
+        "inf": None,
+        "negative_inf": None,
+        "nan": None,
+        "nested": [1.0, [2.0, None]],
+    }
+
+
+def test_write_json_failure_leaves_no_partial_file_or_temp(tmp_path):
+    out_path = tmp_path / "invalid.json"
+    with pytest.raises(TypeError):
+        validation_common.write_json(out_path, {"unsupported": object()})
+    assert not out_path.exists()
+    assert list(tmp_path.iterdir()) == []
