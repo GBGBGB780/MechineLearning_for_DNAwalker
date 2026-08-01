@@ -39,7 +39,7 @@ jobs:
             -o -type f -name '*.py' -print0 \
             | xargs -0 .venv/bin/python -m pyflakes
           .venv/bin/python -m compileall -q . -x '/\.git/|/\.venv/|/archive/'
-          .venv/bin/python -m pip check
+          uv pip check --python .venv/bin/python
           git diff --check
           bash -n scripts/run_application.sh scripts/run_smoke_test.sh \
             scripts/hpc/cnn.pbs.sh scripts/hpc/transformer.pbs.sh
